@@ -62,7 +62,7 @@ export function stopVoice(): void {
 
 // 用用户自己的 AI 提供方做语音转文字（目前只有 OpenAI 提供标准的 /audio/transcriptions 接口）
 export async function transcribeWithProvider(provider: string, apiKey: string, audioBase64: string, mimeType: string): Promise<{ text?: string; error?: string }> {
-  if (provider !== "openai") return { error: "当前 AI 提供方没有语音转文字接口，请改用本机识别。" };
+  if (provider !== "openai") return { error: "当前模型服务商没有语音转文字接口，请改用本机识别。" };
   try {
     const buf = Buffer.from(audioBase64, "base64");
     if (buf.length > 24 * 1024 * 1024) return { error: "录音太长了，请分几段说。" };

@@ -3,6 +3,8 @@ const $ = (id) => document.getElementById(id);
 const log = $("log");
 const input = $("input");
 let running = false;
+let steerMode = false;
+const sendQueues = new Map(); // 项目 id → 排队中的消息
 let currentAi = null;
 let currentThinking = null;
 let currentSteps = null;
@@ -97,29 +99,57 @@ function stepDetail(name, inp) {
   return d;
 }
 
-// ---------- 进行中状态：脉冲点 + 当前步骤 + 计时 + 步骤小标签（参考 animate-ui 脉冲点，MIT，CSS 重写） ----------
+// ---------- 执行过程：一个紧凑的进度块 ----------
+// 顶行：现在在做什么（人话）+ 计时；下面：最近完成的 2–3 步（人话）；
+// “查看细节”里才有原始步骤（工具名、参数、结果、截图）和全部思考。进行中和历史回放都用它。
 let liveNode = null;
 let liveTimer = 0;
 let liveStart = 0;
 let liveSteps = [];
+let liveStopped = false;
+let liveThink = null;
+const DETAIL_ONLY = new Set(["screenshot", "read_page", "tableau_state", "wait", "scroll"]);
 function liveEl(cls) {
   return liveNode && liveNode.querySelector(cls);
 }
+// 人话：优先用主进程给的 label；旧记录没有时用通用文案，不露工具名和坐标
+function stepLabel(ev) {
+  const l = String(ev.label || "").trim();
+  return l || "操作页面";
+}
 function liveRenderChips() {
-  const h = liveEl(".lhist");
+  const h = liveEl(".lsteps");
   if (!h) return;
-  const done = liveSteps.filter((x) => x.state !== "run").slice(-3);
-  const en = i18n.lang() === "en";
-  h.textContent = done.length ? i18n.t("已完成：") + done.map((x) => i18n.t(x.verb) + (x.det ? " " + (i18n.t(x.det)) : "")).join(en ? ", " : "、") : "";
+  const done = liveSteps.filter((x) => x.state !== "run" && !x.quiet).slice(-3);
+  h.textContent = "";
+  for (const x of done) {
+    const r = el("div", "lstep " + x.state);
+    const tx = el("span", "ltx");
+    tx.append(el("span", "ltl", x.label));
+    if (x.note) tx.append(el("span", "lnote", x.note));
+    r.append(el("span", "lic"), tx);
+    h.append(r);
+  }
 }
 function liveBegin() {
   if (liveNode) return;
   liveSteps = [];
+  liveStopped = false;
+  liveThink = null;
   liveStart = Date.now();
-  liveNode = el("div", "live");
+  liveNode = el("div", "rblk");
   const now = el("div", "lnow");
-  now.append(el("span", "lt shiny", "正在斟酌…"), el("span", "ls", "0s"));
-  liveNode.append(now, el("div", "lhist"));
+  now.append(el("span", "lt shiny", "正在斟酌…"), el("span", "ls", "0s"), el("span", "lchev"));
+  const det = el("details", "ldetail");
+  det.append(el("summary", "", "查看细节"), el("div", "ldbody"));
+  now.onclick = () => {
+    if (liveNode && !liveNode.classList.contains("fin")) return;
+    const n = now.parentNode;
+    const d = n.querySelector(".ldetail");
+    d.open = !d.open;
+    n.classList.toggle("expanded", d.open);
+  };
+  liveNode.append(now, el("div", "lsteps"), det);
   $("welcome")?.remove();
   log.appendChild(liveNode);
   clearInterval(liveTimer);
@@ -137,20 +167,40 @@ function liveText(t, waiting) {
     e.classList.toggle("waiting", !!waiting);
   }
 }
+function liveBody() {
+  if (!liveNode) liveBegin();
+  return liveNode.querySelector(".ldbody");
+}
 function liveEnd() {
   if (!liveNode) return;
   clearInterval(liveTimer);
   const node = liveNode;
-  const n = liveSteps.length;
+  const n = liveSteps.filter((x) => !x.quiet).length;
+  const secs = Math.floor((Date.now() - liveStart) / 1000);
   const lt = node.querySelector(".lt");
-  lt.textContent = n ? `已完成 ${n} 步` : "完成";
-  lt.className = "lt done";
-  node.querySelector(".ls").textContent = Math.floor((Date.now() - liveStart) / 1000) + "s";
+  const hasDetail = !!node.querySelector(".ldbody").children.length;
+  const en = i18n.lang() === "en";
   liveNode = null;
-  setTimeout(() => {
-    node.classList.add("out");
-    setTimeout(() => node.remove(), 220);
-  }, 2000);
+  if (!hasDetail && !n) {
+    lt.textContent = liveStopped ? "已停止" : "完成";
+    lt.className = "lt done";
+    setTimeout(() => {
+      node.classList.add("out");
+      setTimeout(() => node.remove(), 220);
+    }, 1500);
+    return;
+  }
+  const head = liveStopped ? "已停止" : "已完成";
+  const tm = replaying ? "" : en ? ` · ${secs}s` : ` · 用时 ${secs} 秒`;
+  lt.textContent = i18n.t(head) + tm;
+  lt.className = "lt done" + (liveStopped ? " stopped" : "");
+  node.querySelector(".ls").remove();
+  node.classList.add("fin");
+  node.querySelector(".ldetail summary").textContent = "查看细节";
+  // 收起后放在这一轮提问的下面，回答和建议接在它后面
+  const users = log.querySelectorAll(".msg.user");
+  const lastUser = users[users.length - 1];
+  if (lastUser && lastUser.parentNode === log) lastUser.after(node);
 }
 function setRunning(v, text) {
   running = v;
@@ -172,10 +222,11 @@ function setStatus(text, busy) {
 // ---------- 发送 ----------
 async function send(text) {
   text = (text ?? input.value).trim();
-  if (running) return;
+  if (running) return sendWhileRunning(text);
   if (!text && attachments.length === 0) return;
   if (!$("coach").classList.contains("hidden")) endCoach();
   await flushPendingReset();
+  retireGuides();
   const bubble = el("div", "msg user", text || "（附件）");
   if (attachments.length) {
     const row = el("div", "attach-row in-bubble");
@@ -207,6 +258,67 @@ async function send(text) {
   }
 }
 
+// ---------- 运行中发送：排队 / 作为引导 ----------
+async function steerNow(text, node) {
+  const r = await api.agent.steer(text).catch(() => null);
+  if (r && r.ok) {
+    const b = node || add(el("div", "msg user", text));
+    b.append(el("span", "mode", "引导"));
+    return true;
+  }
+  return false;
+}
+async function sendWhileRunning(text) {
+  if (!text) return;
+  if (attachments.length) showToast("运行中发送的消息不带附件，附件会留在输入框里", null, 4);
+  input.value = "";
+  autosize();
+  if (steerMode) {
+    if (!(await steerNow(text))) showToast("这一轮刚好结束了，已作为新消息发送", null, 3), send(text);
+    return;
+  }
+  const q = sendQueues.get(activeProjectId) || [];
+  q.push(text);
+  sendQueues.set(activeProjectId, q);
+  renderQueue();
+}
+function renderQueue() {
+  const box = $("sendq");
+  const q = sendQueues.get(activeProjectId) || [];
+  box.textContent = "";
+  box.classList.toggle("hidden", !q.length);
+  q.forEach((t, i) => {
+    const r = el("div", "qi");
+    r.append(el("span", "qtag", "排队中"), el("span", "qtx", t));
+    const g = el("button", "qgo", "作为引导发送");
+    g.type = "button";
+    g.onclick = async () => {
+      sendQueues.set(activeProjectId, (sendQueues.get(activeProjectId) || []).filter((_, j) => j !== i));
+      renderQueue();
+      if (!(await steerNow(t))) send(t);
+    };
+    const x = el("button", "qx");
+    x.type = "button";
+    x.title = "移出队列";
+    x.setAttribute("aria-label", "移出队列");
+    x.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg>';
+    x.onclick = () => {
+      sendQueues.set(activeProjectId, (sendQueues.get(activeProjectId) || []).filter((_, j) => j !== i));
+      renderQueue();
+    };
+    r.append(g, x);
+    box.append(r);
+  });
+}
+function flushQueue() {
+  if (running) return;
+  const q = sendQueues.get(activeProjectId) || [];
+  if (!q.length) return;
+  const t = q.shift();
+  renderQueue();
+  send(t);
+}
+
 // 不是从输入框发出的用户消息（例如验收脚本代发）：显示成用户气泡并进入运行中
 if (api.onExternalMessage) {
   api.onExternalMessage((m) => {
@@ -217,7 +329,14 @@ if (api.onExternalMessage) {
   });
 }
 
+let activeProjectId = "";
+let replaying = false;
 api.onEvent((ev) => {
+  // 只显示当前项目的事件；其他项目的事件主进程已写入它们自己的记录
+  if (ev && ev.projectId && activeProjectId && ev.projectId !== activeProjectId) return;
+  handleAgentEvent(ev);
+});
+function handleAgentEvent(ev) {
   switch (ev.type) {
     case "text":
       liveText("正在组织回答…");
@@ -228,62 +347,43 @@ api.onEvent((ev) => {
       scrollDown();
       break;
     case "thinking": {
-      if (!String(ev.delta || "").trim() && !currentThinking) break; // 空内容不建折叠项
-      if (!currentThinking) {
-        const d = el("details", "thinking");
-        d.append(el("summary", "", "思考过程"), el("div"));
-        currentThinking = add(d);
-        currentAi = null;
+      if (!String(ev.delta || "").trim() && !currentThinking) break; // 空内容不算
+      const body = liveBody();
+      if (!liveThink) {
+        liveThink = el("div", "dthink");
+        liveThink.append(el("div", "dh2", "思考记录"), el("div", "dtx"));
+        body.prepend(liveThink);
       }
-      currentThinking.querySelector("div").textContent += ev.delta;
+      const tx = liveThink.querySelector(".dtx");
+      if (!currentThinking && tx.textContent) tx.textContent += "\n\n";
+      currentThinking = liveThink;
+      tx.textContent += ev.delta;
+      currentAi = null;
       break;
     }
     case "tool": {
       currentAi = null;
       currentThinking = null;
-      if (!currentSteps) currentSteps = add(el("div", "steps"));
-      const s = el("div", "step run");
-      const row = el("button", "row");
+      const body = liveBody();
+      const label = stepLabel(ev);
+      const s = el("div", "dstep run");
+      const row = el("button", "dh");
       row.type = "button";
       row.setAttribute("aria-expanded", "false");
-      row.append(el("span", "verb", VERBS[ev.name] || ev.name), stepDetail(ev.name, ev.input));
+      row.append(el("span", "dic"), el("span", "dlb", label), el("span", "dnm", ev.name));
       row.onclick = () => {
         s.classList.toggle("open");
         row.setAttribute("aria-expanded", s.classList.contains("open") ? "true" : "false");
       };
-      const out = el("div", "out", JSON.stringify(ev.input, null, 1));
+      const out = el("div", "out");
+      out.append(el("pre", "din", JSON.stringify(ev.input, null, 1)), el("pre", "dres"));
       s.append(row, out);
-      if (INTERNAL_TOOLS.has(ev.name)) {
-        s.classList.add("internal");
-        const grp = currentSteps;
-        grp.dataset.hidden = String((Number(grp.dataset.hidden) || 0) + 1);
-        let tgl = grp.querySelector(".steps-more");
-        if (!tgl) {
-          tgl = el("button", "steps-more");
-          tgl.type = "button";
-          tgl.onclick = () => {
-            const on = grp.classList.toggle("show-all");
-            tgl.setAttribute("aria-expanded", on ? "true" : "false");
-            tgl.textContent = on ? "收起内部步骤" : `显示全部（含 ${grp.dataset.hidden} 个内部步骤）`;
-          };
-          grp.append(tgl);
-        }
-        tgl.textContent = grp.classList.contains("show-all") ? "收起内部步骤" : `显示全部（含 ${grp.dataset.hidden} 个内部步骤）`;
-        grp.insertBefore(s, tgl);
-      } else {
-        const tgl = currentSteps.querySelector(".steps-more");
-        if (tgl) currentSteps.insertBefore(s, tgl);
-        else currentSteps.append(s);
-      }
+      body.append(s);
       stepNodes.set(ev.id, s);
-      setStatus(`${VERBS[ev.name] || ev.name}…`, true);
-      {
-        const verb = VERBS[ev.name] || ev.name;
-        const det = [...row.querySelectorAll(".detail > *")].map((n) => n.textContent.trim()).filter(Boolean).join(" ").slice(0, 28) || (row.querySelector(".detail")?.textContent || "").trim().slice(0, 28);
-        liveText(`正在${verb}${det ? " " + det : ""}…`);
-        liveSteps.push({ id: ev.id, label: verb + (det ? " " + det : ""), verb, det, state: "run" });
-        liveRenderChips();
-      }
+      setStatus(`${label}…`, true);
+      liveText(label + "…");
+      liveSteps.push({ id: ev.id, label, state: "run", quiet: DETAIL_ONLY.has(ev.name) });
+      liveRenderChips();
       scrollDown();
       break;
     }
@@ -296,9 +396,9 @@ api.onEvent((ev) => {
         const ls = liveSteps.find((x) => x.id === ev.id);
         if (ls) ls.state = ev.isError ? "err" : "ok";
         liveRenderChips();
-        liveText("正在斟酌下一步…");
+        liveText("正在想下一步…");
       }
-      s.querySelector(".out").textContent = ev.text;
+      s.querySelector(".dres").textContent = ev.text || "";
       if (ev.isError) s.classList.add("open");
       if (ev.image) {
         const img = el("img");
@@ -309,8 +409,8 @@ api.onEvent((ev) => {
           $("lightboxImg").src = img.src;
           $("lightbox").classList.remove("hidden");
         };
-        s.append(img);
-        const imgs = log.querySelectorAll(".step img");
+        s.querySelector(".out").append(img);
+        const imgs = log.querySelectorAll(".dstep img");
         for (let i = 0; i < imgs.length - 2; i++) imgs[i].remove();
       }
       scrollDown();
@@ -346,6 +446,9 @@ api.onEvent((ev) => {
       usage.output += ev.output || 0;
       usage.cacheRead += ev.cacheRead || 0;
       break;
+    case "guide":
+      renderGuide(ev);
+      break;
     case "ask_resolved":
       resolveCard(ev.id, ev.answer, "");
       break;
@@ -359,13 +462,15 @@ api.onEvent((ev) => {
     case "done":
       renderUsage();
       currentAi = currentThinking = currentSteps = null;
-      log.querySelectorAll(".step.run").forEach((s) => s.classList.remove("run"));
-      log.querySelectorAll("details.thinking").forEach((d) => !d.textContent.replace("思考过程", "").trim() && d.remove());
-      if (ev.stopped) add(el("div", "msg note", "已停止"));
+      log.querySelectorAll(".dstep.run").forEach((s) => s.classList.remove("run"));
+      liveStopped = !!ev.stopped;
+      if (!liveNode) liveStopped = false;
       setRunning(false);
+      setTimeout(flushQueue, 400);
+      askTwbxAfterSave();
       break;
   }
-});
+}
 
 // 被解决的“需要你处理 / 请确认”卡片：自动收起成一行小字（无论是在卡片上、别处回答，还是停止）
 const askCards = new Map();
@@ -462,6 +567,30 @@ function renderConfirm(ev) {
 
 // 一步操作完成后的一句话说明，可撤销时带“撤销”
 function renderChange(ev) {
+  // 属于某一步的“改了什么”并进那一步（进度块里的步骤行和细节），不再单独占一条消息
+  const host = liveNode && [...liveSteps].reverse().find((x) => !x.quiet);
+  if (host) {
+    host.note = ev.text;
+    liveRenderChips();
+    const dn = stepNodes.get(host.id);
+    if (dn) {
+      dn.querySelector(".dnote")?.remove();
+      dn.querySelector(".dh").after(el("div", "dnote", ev.text));
+    }
+    if (ev.undoable && !replaying) showToast("已完成：" + ev.text, async () => {
+      let r;
+      try {
+        r = await api.undo(ev.id);
+      } catch (e) {
+        r = { ok: false, message: "撤销失败" };
+      }
+      if (r && r.ok) {
+        host.note = ev.text + "（已撤销）";
+        liveRenderChips();
+      } else showToast((r && r.message) || "不能撤销", null, 3);
+    });
+    return;
+  }
   const n = el("div", "change-note");
   const w = el("span", "what");
   w.append(el("b", "", "改了什么："), document.createTextNode(ev.text));
@@ -469,7 +598,7 @@ function renderChange(ev) {
   const tag = el("span", "undone-tag", "");
   n.append(tag);
   add(n);
-  if (ev.undoable) {
+  if (ev.undoable && !replaying) {
     // 只留一个撤销入口：输入框顶部的撤销条；聊天里的说明行只读，撤销后标“已撤销”
     showToast("已完成：" + ev.text, async () => {
       let r;
@@ -540,32 +669,34 @@ function linkify(text, parent) {
 }
 function renderSuggest(ev) {
   const box = el("div", "suggest");
-  box.append(el("div", "title", ev.title || "可以这样改进"));
+  const pick = !!ev.pick; // 选择卡片：先选再做（例如“你能做什么图”），可单选可多选，点“确定”才开始
+  box.append(el("div", "title", ev.title || (pick ? "想做哪一个？可以多选" : "可以这样改进")));
   if (ev.detail) {
     const d = el("div", "body");
     linkify(String(ev.detail), d);
     box.append(d);
   }
   const actions = ev.actions || [];
-  const multi = !!ev.multi && actions.length > 1;
+  const multi = pick ? actions.length > 0 : !!ev.multi && actions.length > 1;
   const list = el("div", "sopts");
   const picked = new Set();
   const acts = el("div", "acts");
-  const go = el("button", "btn primary", multi ? "按所选去做" : "");
+  const goText = pick ? ev.confirm || "确定" : "按所选去做";
+  const go = el("button", "btn primary", multi ? goText : "");
   const finish = () => {
     box.classList.add("done");
     box.querySelectorAll("button").forEach((b) => (b.disabled = true));
   };
   const sendPicked = (labels) => {
     finish();
-    send("按这几条改：\n" + labels.map((t, i) => `${i + 1}. ${t}`).join("\n"));
+    send((pick ? "我选这几个来做：\n" : "按这几条改：\n") + labels.map((t, i) => `${i + 1}. ${t}`).join("\n"));
   };
   const refreshGo = () => {
     const n = picked.size;
     go.setAttribute("aria-disabled", n ? "false" : "true");
     if (n) delete go.dataset.tip;
     else go.dataset.tip = "先勾选至少一项";
-    go.textContent = n ? `按所选去做（${n}）` : "按所选去做";
+    go.textContent = n ? `${goText}（${n}）` : goText;
   };
   actions.forEach((a, i) => {
     const opt = el("button", "sopt" + (multi ? " multi" : ""), "");
@@ -603,6 +734,195 @@ function renderSuggest(ev) {
   acts.append(skip);
   box.append(acts);
   add(box);
+}
+
+// ---------- 教我做：一步一步带用户自己动手 ----------
+function retireGuides() {
+  log.querySelectorAll(".tguide:not(.old)").forEach((g) => {
+    g.classList.add("old");
+    g.querySelectorAll("button").forEach((b) => (b.disabled = true));
+  });
+}
+function renderGuide(ev) {
+  retireGuides();
+  const g = el("div", "tguide");
+  const n = Number(ev.step) || 0;
+  const tot = Number(ev.total) || 0;
+  const head = el("div", "gh");
+  head.append(el("span", "gtag", "教我做"));
+  if (n) head.append(el("span", "gstep", tot ? (en() ? `Step ${n} of ${tot}` : `第 ${n}/${tot} 步`) : en() ? `Step ${n}` : `第 ${n} 步`));
+  g.append(head, el("div", "ginst", ev.instruction || ""));
+  if (ev.why) g.append(el("div", "gwhy", ev.why));
+  if (ev.highlighted === false) g.append(el("div", "gnote", "右侧没能高亮，请照文字找。"));
+  const acts = el("div", "gacts");
+  const BTNS = [
+    ["做好了", "做好了", "primary"],
+    ["慢一点", "慢一点，再讲细一点", ""],
+    ["这步帮我做", "这步帮我做", ""],
+    ["剩下的直接做", "剩下的直接做", ""],
+  ];
+  for (const [label, msg, cls] of BTNS) {
+    const b = el("button", "btn " + cls, label);
+    b.type = "button";
+    b.onclick = () => {
+      if (g.classList.contains("old") || running) return;
+      send(msg);
+    };
+    acts.append(b);
+  }
+  g.append(acts);
+  add(g);
+}
+
+// ---------- 文档存放位置、保存、退出提醒 ----------
+const REVEAL_WORD = () => (IS_WIN ? "在资源管理器中显示" : "在访达中显示");
+async function paintDocs() {
+  $("docsReveal").textContent = REVEAL_WORD();
+  let d = null;
+  try {
+    d = api.docs ? await api.docs.get() : null;
+  } catch {}
+  $("docsPath").textContent = d ? d.path : "";
+}
+$("docsChange").onclick = async () => {
+  let d = null;
+  try {
+    d = await api.docs.choose();
+  } catch {}
+  if (d && d.error) showToast(d.error, null, 4);
+  paintDocs();
+};
+$("docsReveal").onclick = () => api.docs && api.docs.reveal();
+
+const projInfo = (id) => ((projState && projState.projects) || []).concat((projState && projState.library) || []).find((p) => p.id === id);
+const isUnsaved = (p) => !!p && (p.steps || 0) > (p.savedSteps || 0);
+function paintSaveDot() {
+  const p = projInfo(activeProjectId);
+  $("btnSave").querySelector(".udot").hidden = !isUnsaved(p);
+  $("btnSave").dataset.tip = isUnsaved(p) ? "保存（有没保存的改动）" : "保存";
+}
+// 居中对话框：标题、说明、按钮（{label, kind, fn}）
+function askDialog(title, body, buttons) {
+  document.querySelector(".dlg")?.remove();
+  const wrap = el("div", "dlg");
+  // 右侧网页是原生视图，会盖在对话框上面：对话框打开期间先藏起来，关掉后恢复
+  if (api.setOverlay) api.setOverlay(true);
+  const realRemove = wrap.remove.bind(wrap);
+  wrap.remove = () => {
+    realRemove();
+    if (api.setOverlay && !document.querySelector(".dlg")) api.setOverlay(false);
+  };
+  wrap.setAttribute("role", "dialog");
+  wrap.setAttribute("aria-modal", "true");
+  const card = el("div", "dcard");
+  card.append(el("div", "dt", title));
+  if (body) card.append(typeof body === "string" ? el("div", "db", body) : body);
+  const acts = el("div", "acts");
+  for (const b of buttons) {
+    const x = el("button", "btn " + (b.kind || ""), b.label);
+    x.type = "button";
+    x.onclick = () => {
+      wrap.remove();
+      if (b.fn) b.fn();
+    };
+    acts.append(x);
+  }
+  card.append(acts);
+  wrap.append(card);
+  wrap.onkeydown = (e) => e.key === "Escape" && wrap.remove();
+  document.body.append(wrap);
+  acts.querySelector(".primary, .btn")?.focus();
+}
+let pendingTwbx = "";
+async function doSave(id, consent) {
+  id = id || activeProjectId;
+  if (!id || !api.projects.save) return;
+  if (id !== activeProjectId) await api.projects.switch(id);
+  if (running) return showToast("正在执行任务，等它结束再保存", null, 4);
+  let r = null;
+  try {
+    r = await api.projects.save(id, consent);
+  } catch (e) {
+    r = { error: String((e && e.message) || e) };
+  }
+  if (r && r.needConsent) {
+    document.querySelector(".savecard")?.remove();
+    const c = el("div", "savecard");
+    c.append(el("b", "", "保存到 Tableau Public"), el("div", "", "保存会把这个工作簿发布到你的 Tableau Public 账号，并设成不在个人主页显示。有链接的人仍然能看到，所以别用私密数据。下次打开这个项目，会直接打开它接着编辑。"));
+    const a = el("div", "acts");
+    const ok = el("button", "btn primary", "我明白，保存");
+    ok.type = "button";
+    ok.onclick = () => (c.remove(), doSave(id, true));
+    const no = el("button", "btn", "取消");
+    no.type = "button";
+    no.onclick = () => c.remove();
+    a.append(ok, no);
+    c.append(a);
+    add(c);
+    return;
+  }
+  if (r && (r.error || (r.ok === false && r.message))) return add(el("div", "msg error", r.error || r.message));
+  if (r && r.ok) pendingTwbx = id;
+}
+$("btnSave").onclick = () => doSave();
+function askTwbxAfterSave() {
+  const id = pendingTwbx;
+  if (!id || id !== activeProjectId) return;
+  pendingTwbx = "";
+  setTimeout(() => {
+    const p = projInfo(id);
+    if (!p || !p.publishedUrl || !api.projects.downloadTwbx) return;
+    const c = el("div", "savecard");
+    c.append(el("b", "", "已保存"), el("div", "", "要不要再下载一份 .twbx 放到项目文件夹？本地文件只能用 Tableau Desktop 编辑，在 TabPilot 里继续编辑的是网上那份。"));
+    const a = el("div", "acts");
+    const ok = el("button", "btn primary", "下载");
+    ok.type = "button";
+    ok.onclick = async () => {
+      ok.setAttribute("aria-disabled", "true");
+      let r = null;
+      try {
+        r = await api.projects.downloadTwbx(id);
+      } catch (e) {
+        r = { error: String((e && e.message) || e) };
+      }
+      c.remove();
+      if (r && r.error) add(el("div", "msg error", r.error));
+    };
+    const no = el("button", "btn", "不用");
+    no.type = "button";
+    no.onclick = () => c.remove();
+    a.append(ok, no);
+    c.append(a);
+    add(c);
+  }, 900);
+}
+// 退出前提醒
+if (api.onUnsaved) {
+  api.onUnsaved((list) => {
+    list = Array.isArray(list) ? list : [];
+    const body = el("div", "db");
+    body.append(document.createTextNode("这些项目还有没保存的改动："));
+    const ul = el("ul");
+    list.forEach((p) => ul.append(el("li", "", p.name)));
+    body.append(ul);
+    askDialog("先保存再退出吗？", body, [
+      {
+        label: "去保存",
+        kind: "primary",
+        fn: () => list[0] && api.projects.switch(list[0].id),
+      },
+      { label: "不保存，直接退出", kind: "danger", fn: () => api.quit() },
+      { label: "取消" },
+    ]);
+  });
+}
+function askCloseProject(p) {
+  if (!isUnsaved(p)) return api.projects.close(p.id);
+  askDialog("这个项目还有没保存的改动", `“${p.name}”保存后，下次打开能接着编辑。`, [
+    { label: "保存", kind: "primary", fn: () => doSave(p.id) },
+    { label: "不保存，关闭", kind: "danger", fn: () => api.projects.close(p.id) },
+    { label: "取消" },
+  ]);
 }
 
 // 本轮用量：模型、token（每轮结束后一行小字）
@@ -655,12 +975,18 @@ async function addPaths(paths) {
   renderAttachments();
 }
 $("btnAttach").onclick = async () => addPaths((await api.pickFiles()) || []);
+// 选好文件就直接发给助手接入当前工作簿
+async function uploadOwnData() {
+  const paths = (await api.pickFiles()) || [];
+  if (!paths.length) return;
+  await addPaths(paths);
+  send("把这份数据接入当前工作簿，看看里面有什么，再告诉我适合做哪些图");
+}
 $("btnShot").onclick = async () => {
-  const shot = await api.captureTableau();
-  if (shot) {
-    attachments.push({ kind: "image", name: "Tableau 截图.png", data: shot, mediaType: "image/png" });
-    renderAttachments();
-  }
+  const shot = await api.captureTableau().catch(() => null);
+  if (!shot) return showToast("先打开一个项目，右边有画面时才能截图", null, 3);
+  attachments.push({ kind: "image", name: "Tableau 截图.png", data: shot, mediaType: "image/png" });
+  renderAttachments();
 };
 input.addEventListener("paste", (e) => {
   for (const item of e.clipboardData.items) {
@@ -701,6 +1027,8 @@ $("btnMic").onclick = async () => {
     return;
   }
   voiceBase = input.value ? input.value.replace(/\s*$/, "") + " " : "";
+  voiceDone = "";
+  voiceLast = "";
   const r = await api.voiceStart();
   if (r && r.error) {
     if (/权限|麦克风|语音识别|permission/i.test(r.error)) renderPermissionGuide(r.error);
@@ -711,9 +1039,25 @@ $("btnMic").onclick = async () => {
   $("btnMic").classList.add("live");
   setStatus("正在听，说完再点一下麦克风", true);
 };
+// 说到一半停顿再接着说，识别器会从头开始一段新的文字：把上一段留下，接在后面，不覆盖
+let voiceDone = "";
+let voiceLast = "";
+// 识别器修正时一般只改结尾：开头一半以上相同就算同一段；否则是停顿后新开的一段
+function samePhrase(a, b) {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return i >= Math.ceil(Math.min(a.length, b.length) / 2);
+}
 api.onVoice((ev) => {
   if (ev.type === "partial" || ev.type === "final") {
-    input.value = voiceBase + ev.text;
+    const t = String(ev.text || "");
+    if (t) {
+      if (voiceLast && !samePhrase(voiceLast, t) && !t.startsWith(voiceLast) && !voiceLast.startsWith(t)) {
+        voiceDone += voiceLast + (/[\u4e00-\u9fff]$/.test(voiceLast) ? "，" : " ");
+      }
+      voiceLast = t;
+    }
+    input.value = voiceBase + voiceDone + voiceLast;
     autosize();
   }
   if (ev.type === "error") (/权限|麦克风|语音识别|permission/i.test(ev.text) ? renderPermissionGuide(ev.text) : add(el("div", "msg error", ev.text)));
@@ -783,7 +1127,7 @@ $("btnNew").onclick = async () => {
     return;
   }
   await flushPendingReset();
-  const hasContent = log.querySelector(".msg, .steps, .ask, .confirm, .suggest, .change-note, details.thinking");
+  const hasContent = log.querySelector(".msg, .rblk, .ask, .confirm, .suggest, .change-note");
   const stash = document.createDocumentFragment();
   [...log.childNodes].forEach((n) => stash.append(n));
   log.innerHTML = welcomeOuter; // 清空对话后，欢迎页重新出现；开始使用后又会收起
@@ -819,7 +1163,8 @@ $("btnTwb").onclick = async () => {
 };
 $("navBack").onclick = () => api.nav("back");
 $("navReload").onclick = () => api.nav("reload");
-$("navHome").onclick = () => api.nav("home");
+$("navHome").onclick = () => api.projects.home();
+$("navHome").dataset.tip = "项目主页";
 api.onUrl((u) => ($("url").textContent = String(u).replace(/^https?:\/\//, "")));
 $("lightbox").onclick = () => $("lightbox").classList.add("hidden");
 $("lightboxX").onclick = (e) => {
@@ -973,7 +1318,50 @@ const AUTH = {
 };
 let authCollapsed = false;
 let authLast = "";
+function renderDraftLost(st) {
+  const box = $("auth");
+  const key = st.state + ":" + (st.projectId || "");
+  if (authLast === key) return;
+  authLast = key;
+  box.classList.remove("hidden", "collapsed");
+  box.innerHTML = "";
+  const head = el("div", "ah");
+  head.append(el("span", "chip2", "草稿"), el("span", "at", st.state === "published-lost" ? "这份已保存的工作簿打不开了" : "这个草稿在 Tableau 那边已经失效"));
+  const body = el("div", "ab");
+  body.append(el("div", "lostx", "没保存到 Tableau Public 的草稿，过一阵会被清掉。登录没问题，聊天记录也都在。"));
+  const acts = el("div", "acts");
+  const run = (fn, doing) => async () => {
+    acts.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    showToast(doing, null, 4);
+    try {
+      const r = await fn(st.projectId);
+      if (r && r.error) throw new Error(r.error);
+    } catch (e) {
+      acts.querySelectorAll("button").forEach((b) => (b.disabled = false));
+      add(el("div", "msg error", String((e && e.message) || e)));
+    }
+  };
+  if (st.state === "published-lost" && api.projects.findPublished) {
+    const f = el("button", "btn primary", "去我的作品里找回");
+    f.type = "button";
+    f.onclick = run((id) => api.projects.findPublished(id), "正在去我的作品里找…");
+    acts.append(f);
+  }
+  if ((st.recipeSteps || 0) > 0) {
+    const a = el("button", "btn" + (st.state === "published-lost" ? "" : " primary"), "按记录重新做一遍");
+    a.type = "button";
+    a.onclick = run((id) => api.projects.rebuild(id), "正在按记录重新做一遍…");
+    acts.append(a);
+  }
+  const b = el("button", "btn", "新建空白工作簿");
+  b.type = "button";
+  b.onclick = run((id) => api.projects.freshWorkbook(id), "正在新建空白工作簿…");
+  acts.append(b);
+  body.append(acts);
+  box.append(head, body);
+}
 function renderAuth(st) {
+  if (st && (st.state === "draft-lost" || st.state === "published-lost")) return renderDraftLost(st);
   const box = $("auth");
   const info = st && AUTH[st.state];
   if (!info) {
@@ -1057,12 +1445,20 @@ function renderDynWelcome(r) {
   w.append(el("h1", "", String(r.title || "").slice(0, 60)));
   if (r.lead) w.append(el("p", "", String(r.lead).slice(0, 160)));
   const list = Array.isArray(r.suggestions) ? r.suggestions.slice(0, 4) : [];
-  if (list.length) {
+  if (list.length || r.needsData) {
     const box = el("div", "starter");
     box.append(el("div", "starter-title", "下一步可以这样做"));
+    // 还没接数据：第一条固定是上传自己的数据（也可以直接把文件拖进来）
+    let up = null;
+    if (r.needsData) {
+      up = el("button", "chip primary", "上传你自己的数据（Excel / CSV）");
+      box.append(up);
+    }
     list.forEach((t) => box.append(el("button", "chip", String(t).slice(0, 90))));
+    if (r.needsData) box.append(el("div", "starter-hint", "也可以把 Excel / CSV 文件直接拖到这里。"));
     w.append(box);
     bindChips(w);
+    if (up) up.onclick = uploadOwnData;
   }
   w.append(el("div", "dyn-tag", "依据右侧页面所见而定"));
 }
@@ -1157,6 +1553,7 @@ document.querySelectorAll("#langSeg button").forEach(
     (b.onclick = () => {
       i18n.set(b.dataset.l);
       paintLang();
+      if (projState && projState.home) renderHome();
       if (api.updateSettings) api.updateSettings({ language: b.dataset.l, uiLang: i18n.lang() });
     }),
 );
@@ -1247,6 +1644,7 @@ async function refreshSettings() {
   const s = await api.getSettings();
   applyTheme(s.theme);
   suggestOn = s.suggestions !== false;
+  steerMode = s.sendWhileRunning === "steer";
   $("modelTag").textContent = modelOf(s);
   return s;
 }
@@ -1256,13 +1654,17 @@ async function openSettings() {
   chosenTheme = s.theme || "system";
   paintTheme();
   $("optSuggest").checked = s.suggestions !== false;
+  $("optSteer").checked = s.sendWhileRunning === "steer";
   $("optMotion").checked = document.documentElement.dataset.motion === "reduce";
   $("optJev").checked = !!s.jevVerify;
   $("jevKey").value = "";
   $("jevHas").textContent = s.hasKey.jev ? "已保存" : "未设置";
   $("jevHas").className = "badge" + (s.hasKey.jev ? " ok" : "");
   paintCurrentProvider(s);
+  paintDocs();
   resetClearBox();
+  resetRevoke();
+  renderPerms($("permList"));
   $("settings").classList.remove("hidden");
   setInertUnder(true);
   $("settingsDone").focus();
@@ -1279,7 +1681,7 @@ function paintCurrentProvider(s) {
 }
 // 设置页盖在上面时，底下的界面不能被键盘或读屏访问
 function setInertUnder(on) {
-  document.querySelectorAll("#left > header, #left > main, #left > footer, #left > #auth, #tabbar").forEach((n) => (on ? n.setAttribute("inert", "") : n.removeAttribute("inert")));
+  document.querySelectorAll("#left, #home, #tabbar").forEach((n) => (on ? n.setAttribute("inert", "") : n.removeAttribute("inert")));
 }
 const closeSettings = () => {
   $("settings").classList.add("hidden");
@@ -1298,6 +1700,10 @@ $("settingsDone").onclick = closeSettings;
 $("optSuggest").onchange = () => {
   suggestOn = $("optSuggest").checked;
   api.updateSettings({ suggestions: suggestOn });
+};
+$("optSteer").onchange = () => {
+  steerMode = $("optSteer").checked;
+  api.updateSettings({ sendWhileRunning: steerMode ? "steer" : "queue" });
 };
 $("optJev").onchange = () => api.updateSettings({ jevVerify: $("optJev").checked });
 $("jevKey").onkeydown = async (e) => {
@@ -1352,7 +1758,7 @@ async function askClear() {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     closeSettings();
-    if (!$("onboard").classList.contains("hidden")) closeOnboard();
+    if (!$("onboard").classList.contains("hidden") && !ob.gate && ob.step < 3) closeOnboard();
     $("lightbox").classList.add("hidden");
   }
 });
@@ -1446,49 +1852,38 @@ function moveHl(wrap, target) {
   hl.style.width = t.width + "px";
   hl.style.height = t.height + "px";
 }
-function renderProviderSplit(body) {
-  const split = el("div", "psplit");
-  const list = el("div", "plist");
-  const hl = el("div", "hl");
-  list.append(hl);
-  const det = el("div", "pdet");
+function renderProviderGrid(body) {
+  const grid = el("div", "pgrid2");
+  const det = el("div", "pdet2");
   const fillDet = () => {
     const p = provOf(ob.provider);
     det.innerHTML = "";
-    det.append(glyph(p.id, "big"), el("b", "", p.name), el("p", "", p.desc || ""));
-    det.append(el("span", "vtag" + (p.vision === false ? " no" : ""), p.vision === false ? "不能看图" : "支持图片"));
-    const kv = el("div", "kv");
-    if (p.region) kv.append(el("span", "", "地区"), el("span", "", p.region === "cn" ? "国内可直连" : "国际"));
-    kv.append(el("span", "", "看图"), el("span", "", p.vision === false ? "不支持（靠读取页面结构）" : "支持"), el("span", "", "下一步"), el("span", "", "填入 API Key"));
-    det.append(kv);
+    det.append(glyph(p.id, "big"));
+    const t = el("div", "pdt");
+    t.append(el("b", "", p.name), el("p", "", p.desc || ""));
+    det.append(t, el("span", "vtag" + (p.vision === false ? " no" : ""), p.vision === false ? "不能看图" : "支持图片"));
   };
   provList.forEach((p, i) => {
-    const b = el("button", "prow" + (ob.provider === p.id ? " on" : ""));
+    const b = el("button", "pcell" + (ob.provider === p.id ? " on" : ""));
+    b.type = "button";
     b.style.setProperty("--i", i);
+    b.setAttribute("aria-pressed", ob.provider === p.id ? "true" : "false");
     const short = String(p.name).split(/[（(]/)[0].trim();
     b.title = p.name;
     b.append(glyph(p.id), el("span", "n", short));
     b.onclick = () => {
       if (ob.provider !== p.id) Object.assign(ob, { provider: p.id, key: "", models: [], model: "", tested: false, rec: "idle", picked: false });
       recToken++;
-      list.querySelectorAll(".prow").forEach((r) => r.classList.toggle("on", r === b));
-      moveHl(list, b);
+      grid.querySelectorAll(".pcell").forEach((r) => {
+        r.classList.toggle("on", r === b);
+        r.setAttribute("aria-pressed", r === b ? "true" : "false");
+      });
       fillDet();
     };
-    list.append(b);
+    grid.append(b);
   });
   fillDet();
-  det.addEventListener("mousemove", (e) => {
-    const r = det.getBoundingClientRect();
-    det.style.setProperty("--mx", e.clientX - r.left + "px");
-    det.style.setProperty("--my", e.clientY - r.top + "px");
-    det.style.transform = `perspective(700px) rotateX(${-((e.clientY - r.top) / r.height - 0.5) * 5}deg) rotateY(${((e.clientX - r.left) / r.width - 0.5) * 5}deg)`;
-  });
-  det.addEventListener("mouseleave", () => (det.style.transform = ""));
-  split.append(list, det);
-  body.append(split);
-  const place = () => moveHl(list, list.querySelector(".prow.on"));
-  [30, 400].forEach((d) => setTimeout(place, d));
+  body.append(grid, det);
 }
 
 // 不能点时显示灰色，并用提示气泡说明原因（用 aria-disabled，这样鼠标移上去仍能看到原因）
@@ -1502,14 +1897,17 @@ function obRender() {
   const body = $("obBody");
   body.innerHTML = "";
   document.querySelectorAll("#obDots i").forEach((d, i) => d.classList.toggle("on", i <= ob.step));
-  $("obBack").style.visibility = ob.step === 0 || ob.step === 3 ? "hidden" : "visible";
-  $("obSkip").style.visibility = ob.step === 3 ? "hidden" : "visible";
+  $("obBack").hidden = ob.step === 0 || ob.step >= 3;
+  $("obSkip").hidden = ob.step >= 3 || !!ob.gate;
   const next = $("obNext");
   setNext(false);
-  next.textContent = ob.step === 3 ? "开始使用" : "下一步";
+  $("onboard").classList.toggle("is-done", ob.step === 4);
+  $("onboard").querySelector(".ob-card").classList.toggle("done", ob.step === 4);
+  $("onboard").querySelector(".ob-card").dataset.ds = lsGet("doneStyle", "a");
+  next.textContent = ob.step === 4 ? "开始使用" : ob.step === 3 && ob.gate ? "进入 TabPilot" : "下一步";
   if (ob.step === 0) {
     body.append(el("h1", "", "选择你的助手"), el("p", "", "它将在右侧的 Tableau 中代你操作，之后可随时在设置中更换。"));
-    renderProviderSplit(body);
+    renderProviderGrid(body);
   } else if (ob.step === 1) {
     const p = provOf(ob.provider);
     body.append(el("h1", "", `填写 ${p.name} 的密钥`), el("p", "", "密钥仅保存在本机，并经系统钥匙串加密。填好后，先测试连接。"));
@@ -1563,7 +1961,7 @@ function obRender() {
     const row = el("div", "ob-test");
     row.append(test, res);
     const lead = body.querySelector("p");
-    if (lead) addInfo(lead, "API Key 相当于你的“通行证”：TabPilot 用它替你调用 AI。它只保存在这台电脑上，用系统钥匙串加密，不会发给别人；也不要把它发给别人。");
+    if (lead) addInfo(lead, "API Key 相当于你的“通行证”：TabPilot 用它替你调用模型。它只保存在这台电脑上，用系统钥匙串加密，不会发给别人；也不要把它发给别人。");
     const guide = el("div", "keyguide");
     guide.append(el("b", "", "还没有密钥？三步即可获得"));
     const ol = el("ol");
@@ -1625,13 +2023,47 @@ function obRender() {
       body.append(b);
     }
     setNext(!ob.model);
+  } else if (ob.step === 3) {
+    body.append(el("h1", "", "允许 TabPilot 工作"), el("p", "", "TabPilot 要读取你的数据文件、安全保存密钥，并在右侧替你操作。请逐项允许；不同意必需的权限，就无法使用。"));
+    const box = el("div", "perms");
+    body.append(box);
+    setNext(true, "请先允许所有必需的权限");
+    renderPerms(box, (ok) => setNext(!ok, "请先允许所有必需的权限"));
   } else {
-    const done = el("div", "ob-done");
-    done.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
-    body.append(done, el("h1", "", "一切就绪"), el("p", "", "现在，说出你想看的图吧。"));
-    const sum = el("div", "ob-sum");
-    sum.append(el("span", "", "AI"), el("span", "", provOf(ob.provider).name), el("span", "", "模型"), el("span", "", ob.model));
-    body.append(sum);
+    const style = lsGet("doneStyle", "a");
+    const prov = provOf(ob.provider);
+    const badge = el("div", "ob-badge");
+    badge.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 12.5l4 4L18.5 8"/></svg>';
+    const chip = el("div", "ob-chip");
+    chip.append(glyph(prov.id), el("span", "cn", String(prov.name).split(/[（(]/)[0].trim()), el("span", "cm", ob.model || ""));
+    const ok = el("span", "cok");
+    ok.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></svg>';
+    ok.append(document.createTextNode("已连接"));
+    chip.append(ok);
+    const change = el("button", "btn quiet ob-change", "更改设置");
+    change.type = "button";
+    change.onclick = () => {
+      closeOnboard();
+      openSettings();
+    };
+    if (style === "b") {
+      const head = el("div", "ob-doneh");
+      const t = el("div");
+      t.append(el("h1", "", "一切就绪"), el("p", "", "现在，说出你想看的图吧。"));
+      head.append(badge, t);
+      const list = el("div", "ob-check");
+      const row = (k, v) => {
+        const r = el("div", "ocr");
+        const m = el("span", "ocm");
+        m.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></svg>';
+        r.append(m, el("span", "ock", k), el("span", "ocv", v));
+        return r;
+      };
+      list.append(row("助手", String(prov.name).split(/[（(]/)[0].trim()), row("模型", ob.model || ""), row("权限", "已全部允许"));
+      body.append(head, list, change);
+    } else {
+      body.append(badge, el("h1", "", "一切就绪"), el("p", "", "现在，说出你想看的图吧。"), chip, change);
+    }
   }
 }
 async function openOnboard(opts) {
@@ -1642,6 +2074,8 @@ async function openOnboard(opts) {
     ob.provider = s.provider || "claude";
     ob.before = { provider: s.provider, model: modelOf(s) };
     if (opts && opts.step === 1) ob.step = 1;
+    ob.gate = !!(opts && opts.gate);
+    if (ob.gate) ob.step = 3;
     obRender();
   });
   $("onboard").classList.remove("hidden");
@@ -1653,7 +2087,15 @@ const closeOnboard = () => {
   setInertUnder(false);
   if (!coachDone()) showCoach();
 };
-$("obSkip").onclick = closeOnboard;
+$("obSkip").onclick = async () => {
+  closeOnboard();
+  // 跳过 API 设置也不能跳过权限
+  let ready = true;
+  try {
+    ready = api.permissions ? await api.permissions.ready() : true;
+  } catch {}
+  if (!ready) openOnboard({ gate: true });
+};
 $("obBack").onclick = () => {
   ob.step = Math.max(0, ob.step - 1);
   obRender();
@@ -1682,6 +2124,14 @@ $("obNext").onclick = async () => {
     ob.step = 3;
     obRender();
   } else if (ob.step === 3) {
+    if (ob.gate) {
+      ob.gate = false;
+      closeOnboard();
+      return;
+    }
+    ob.step = 4;
+    obRender();
+  } else if (ob.step === 4) {
     closeOnboard();
     input.focus();
   } else {
@@ -1689,6 +2139,626 @@ $("obNext").onclick = async () => {
     obRender();
   }
 };
+
+// ---------- 项目主页：侧栏（可拉伸，最窄只留图标）+ 按时间分组 ----------
+const HICON = {
+  home: '<path d="M3.5 9.5L10 4l6.5 5.5"/><path d="M5.5 8.5V16h9V8.5"/>',
+  chart: '<path d="M4 16V9M10 16V4M16 16v-5"/>',
+  map: '<path d="M3 5.5l4.5-2 5 2 4.5-2v11l-4.5 2-5-2-4.5 2z"/><path d="M7.5 3.5v11M12.5 5.5v11"/>',
+  table: '<rect x="3" y="4" width="14" height="12" rx="2"/><path d="M3 9h14M8.5 9v7"/>',
+  folder: '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h3l1.5 2h6.5A1.5 1.5 0 0 1 17 8.5v6A1.5 1.5 0 0 1 15.5 16h-11A1.5 1.5 0 0 1 3 14.5z"/>',
+  star: '<path d="M10 3.5l2 4.2 4.5.6-3.3 3.1.9 4.6L10 13.7 5.9 16l.9-4.6L3.5 8.3 8 7.7z"/>',
+  book: '<path d="M4 4.5h5a2 2 0 0 1 2 2V16a2 2 0 0 0-2-2H4zM16 4.5h-5"/><path d="M16 4.5V14h-5"/>',
+  trash: '<path d="M4.5 6h11M8 6V4h4v2M6 6l.7 9.5h6.6L14 6"/>',
+  archive: '<rect x="3" y="4" width="14" height="3.5" rx="1"/><path d="M4.5 7.5V15a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V7.5M8 11h4"/>',
+  gear: '<path d="M3 5.5h8M15 5.5h2M3 14.5h2M9 14.5h8"/><circle cx="13" cy="5.5" r="2"/><circle cx="7" cy="14.5" r="2"/>',
+  more: '<circle cx="5" cy="10" r="1"/><circle cx="10" cy="10" r="1"/><circle cx="15" cy="10" r="1"/>',
+  edit: '<path d="M4 14.5V16h1.5l8-8L12 6.5zM13 5.5l1-1a1.4 1.4 0 0 1 2 2l-1 1"/>',
+  copy: '<rect x="7" y="7" width="9" height="9" rx="2"/><path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4h-6A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13H7"/>',
+  undo: '<path d="M5 8h7a3.5 3.5 0 0 1 0 7H8M5 8l3-3M5 8l3 3"/>',
+};
+const hsvg = (name, cls) => {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("viewBox", "0 0 20 20");
+  s.setAttribute("class", "hi " + (cls || ""));
+  s.innerHTML = HICON[name] || "";
+  return s;
+};
+const lsGet = (k, d) => {
+  try {
+    return localStorage.getItem(k) ?? d;
+  } catch {
+    return d;
+  }
+};
+const lsSet = (k, v) => {
+  try {
+    localStorage.setItem(k, v);
+  } catch {}
+};
+let projState = null;
+let homeNav = lsGet("homeNav", "recent");
+if (!["recent", "all", "fav", "trash"].includes(homeNav)) homeNav = "recent"; // 旧版本记住的“样例”已下线
+let homeQuery = "";
+let homeView = lsGet("homeView", "list");
+let homeSort = lsGet("homeSort", "edited");
+const thumbCache = new Map();
+const NAVS = [
+  ["recent", "最近项目", "home"],
+  ["all", "全部项目", "folder"],
+  ["fav", "收藏", "star"],
+  ["trash", "归档", "archive"],
+];
+const en = () => i18n.lang() === "en";
+function fmtTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const now = new Date();
+  const mins = Math.floor((now - d) / 60000);
+  const hm = d.toLocaleTimeString(en() ? "en-US" : "zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  if (mins < 1) return en() ? "Just now" : "刚刚";
+  if (mins < 60) return en() ? `${mins} min ago` : `${mins} 分钟前`;
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return (en() ? "Today " : "今天 ") + hm;
+  const y = new Date(now);
+  y.setDate(y.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return en() ? "Yesterday" : "昨天";
+  return en() ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+}
+function groupOf(ts) {
+  const days = (Date.now() - ts) / 86400000;
+  const sameDay = new Date(ts).toDateString() === new Date().toDateString();
+  return sameDay ? 0 : days < 7 ? 1 : 2;
+}
+const GROUP_NAMES = ["今天", "最近 7 天", "更早"];
+// “最近项目”只列 7 天内打开或改过的；更早的不会删，在“全部项目”里
+const RECENT_DAYS = 7;
+const isRecent = (p) => Date.now() - (p.lastOpenedAt || p.updatedAt || 0) < RECENT_DAYS * 86400000;
+const KIND_ICON = { chart: "图表", map: "地图", table: "表格", home: "新项目", data: "数据" };
+
+function renderHomeNav() {
+  const box = $("hnav");
+  box.innerHTML = "";
+  const live = (projState && projState.library) || [];
+  const trash = (projState && projState.trash) || [];
+  const counts = { recent: live.filter(isRecent).length, all: live.length, fav: live.filter((p) => p.favorite).length, trash: trash.length };
+  for (const [id, label, icon] of NAVS) {
+    const b = el("button", "hn" + (homeNav === id ? " on" : ""));
+    b.type = "button";
+    b.dataset.tip = label;
+    b.append(hsvg(icon), el("span", "hl", label), el("span", "hc", counts[id] === "" || counts[id] === 0 ? "" : String(counts[id])));
+    b.onclick = () => {
+      homeNav = id;
+      lsSet("homeNav", id);
+      renderHome();
+    };
+    box.append(b);
+  }
+  const set = $("hnSettings");
+  set.innerHTML = "";
+  set.dataset.tip = "设置";
+  set.append(hsvg("gear"), el("span", "hl", "设置"));
+  set.onclick = openSettings;
+}
+function matchQuery(p) {
+  if (!homeQuery) return true;
+  const q = homeQuery.toLowerCase();
+  return (p.name + " " + (p.summary || "") + " " + (p.sheets || []).join(" ")).toLowerCase().includes(q);
+}
+function sortProjects(list) {
+  const a = [...list];
+  if (homeSort === "name") a.sort((x, y) => x.name.localeCompare(y.name, en() ? "en" : "zh-CN"));
+  else if (homeSort === "created") a.sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
+  else a.sort((x, y) => (y.lastOpenedAt || y.updatedAt || 0) - (x.lastOpenedAt || x.updatedAt || 0));
+  return a;
+}
+function thumbFor(p, cls) {
+  const box = el("div", "hth " + (cls || ""));
+  const fill = (url) => {
+    box.innerHTML = "";
+    const img = el("img");
+    img.src = url;
+    img.alt = "";
+    box.append(img);
+  };
+  if (thumbCache.has(p.id) && thumbCache.get(p.id)) fill(thumbCache.get(p.id));
+  else {
+    box.append(hsvg(HICON[p.icon] ? p.icon : "chart", "ph"));
+    if (p.hasThumb && !thumbCache.has(p.id) && api.projects.thumb) {
+      thumbCache.set(p.id, null);
+      api.projects.thumb(p.id).then((u) => {
+        if (u) {
+          thumbCache.set(p.id, u);
+          fill(u);
+        } else thumbCache.delete(p.id);
+      });
+    }
+  }
+  return box;
+}
+let openMenu = null;
+function closeMenu() {
+  if (openMenu) openMenu.remove();
+  openMenu = null;
+}
+document.addEventListener("click", (e) => {
+  if (openMenu && !e.target.closest(".hmenu, .hmore")) closeMenu();
+});
+document.addEventListener("keydown", (e) => e.key === "Escape" && closeMenu());
+function starBtn(p) {
+  const b = el("button", "hstar" + (p.favorite ? " on" : ""));
+  b.type = "button";
+  b.dataset.tip = p.favorite ? "取消收藏" : "收藏";
+  b.setAttribute("aria-label", p.favorite ? "取消收藏" : "收藏");
+  b.setAttribute("aria-pressed", p.favorite ? "true" : "false");
+  b.append(hsvg("star"));
+  b.onclick = (e) => {
+    e.stopPropagation();
+    api.projects.setFavorite(p.id, !p.favorite);
+  };
+  return b;
+}
+function moreBtn(p, nameEl) {
+  const wrap = el("div", "hrel");
+  const b = el("button", "hmore icon");
+  b.type = "button";
+  b.setAttribute("aria-label", "更多操作");
+  b.append(hsvg("more"));
+  b.onclick = (e) => {
+    e.stopPropagation();
+    if (openMenu) return closeMenu();
+    const m = el("div", "hmenu");
+    const item = (icon, label, fn, danger) => {
+      const x = el("button", danger ? "dng" : "");
+      x.type = "button";
+      x.append(hsvg(icon), document.createTextNode(label));
+      x.onclick = (ev) => {
+        ev.stopPropagation();
+        closeMenu();
+        fn();
+      };
+      m.append(x);
+    };
+    item("edit", "重命名", () => startRename(p, nameEl));
+    item("copy", "复制", () => api.projects.duplicate(p.id));
+    item("archive", "归档", () => api.projects.trash(p.id), true);
+    wrap.append(m);
+    openMenu = m;
+  };
+  wrap.append(b);
+  return wrap;
+}
+function startRename(p, nameEl) {
+  const inp = el("input", "hrename");
+  inp.value = p.name;
+  nameEl.replaceWith(inp);
+  inp.focus();
+  inp.select();
+  let done = false;
+  const commit = (save) => {
+    if (done) return;
+    done = true;
+    const v = inp.value.trim();
+    if (save && v && v !== p.name) api.projects.rename(p.id, v);
+    else renderHome();
+  };
+  inp.onkeydown = (e) => {
+    if (e.isComposing) return;
+    if (e.key === "Enter") commit(true);
+    if (e.key === "Escape") commit(false);
+    e.stopPropagation();
+  };
+  inp.onblur = () => commit(true);
+  inp.onclick = (e) => e.stopPropagation();
+}
+const runBadge = () => el("span", "hrun", "运行中");
+function projectRow(p) {
+  const row = el("div", "hitem");
+  row.tabIndex = 0;
+  row.setAttribute("role", "button");
+  row.append(thumbFor(p));
+  const info = el("div", "hinfo");
+  const nm = el("div", "hname", p.name);
+  const sheets = (p.sheets || []).length;
+  const meta = [KIND_ICON[p.icon] ? (en() ? ({ chart: "Chart", map: "Map", table: "Table", home: "New", data: "Data" })[p.icon] : KIND_ICON[p.icon]) : "", fmtTime(p.lastOpenedAt || p.updatedAt)].filter(Boolean).join(" · ");
+  info.append(nm, el("div", "hmeta", meta));
+  if (p.summary) info.append(el("div", "hsum", p.summary));
+  row.append(info);
+  const act = el("div", "hact");
+  if (projState && projState.runningId === p.id) act.append(runBadge());
+  if (isUnsaved(p)) act.append(el("span", "hchip unsaved", "未保存"));
+  if (sheets) act.append(el("span", "hchip", en() ? `${sheets} sheets` : `${sheets} 个工作表`));
+  act.append(starBtn(p), moreBtn(p, nm));
+  row.append(act);
+  row.onclick = () => api.projects.open(p.id);
+  row.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && e.target === row && (e.preventDefault(), row.click());
+  return row;
+}
+function projectCard(p) {
+  const c = el("div", "hcard");
+  c.tabIndex = 0;
+  c.setAttribute("role", "button");
+  const th = thumbFor(p, "big");
+  th.append(starBtn(p));
+  c.append(th);
+  const nm = el("div", "hname", p.name);
+  c.append(nm, el("div", "hmeta", fmtTime(p.lastOpenedAt || p.updatedAt)));
+  const foot = el("div", "hcfoot");
+  if (projState && projState.runningId === p.id) foot.append(runBadge());
+  foot.append(moreBtn(p, nm));
+  c.append(foot);
+  c.onclick = () => api.projects.open(p.id);
+  c.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && e.target === c && (e.preventDefault(), c.click());
+  return c;
+}
+function listBlock(list) {
+  if (homeView === "cards") {
+    const g = el("div", "hgrid");
+    list.forEach((p) => g.append(projectCard(p)));
+    return g;
+  }
+  const g = el("div", "hlist");
+  list.forEach((p) => g.append(projectRow(p)));
+  return g;
+}
+function renderHomeBody() {
+  const main = $("hmain");
+  main.innerHTML = "";
+  const live = ((projState && projState.library) || []).filter(matchQuery);
+  const titles = { recent: "最近项目", all: "全部项目", fav: "收藏", trash: "归档" };
+  main.append(el("h1", "", titles[homeNav]));
+  if (homeNav === "trash") return renderTrash(main);
+  main.append(el("p", "hsub", "项目实时保存在本机。关掉再打开，聊天和工作簿都会回来。"));
+  if (!live.length) {
+    const msg = homeQuery ? "没有找到匹配的项目。" : homeNav === "fav" ? "还没有收藏。点项目右边的星标，就能把重要的图固定在这里。" : "这里还没有项目。点右上角“新建项目”，说出你想看的图。";
+    main.append(el("div", "hempty", msg));
+    return;
+  }
+  if (homeNav === "all") return main.append(listBlock(sortProjects(live)));
+  const favs = homeNav === "fav" ? sortProjects(live.filter((p) => p.favorite)) : [];
+  if (homeNav === "fav") {
+    if (!favs.length) return main.append(el("div", "hempty", "还没有收藏。点项目右边的星标，就能把重要的图固定在这里。"));
+    return main.append(listBlock(favs));
+  }
+  const recent = live.filter(isRecent);
+  const older = live.length - recent.length;
+  if (!recent.length) {
+    main.append(el("div", "hempty", homeQuery ? "最近 7 天没有匹配的项目，可以到“全部项目”里找。" : "最近 7 天没有打开过项目。更早的项目在“全部项目”里。"));
+    return;
+  }
+  const pinned = sortProjects(recent.filter((p) => p.favorite));
+  const rest = sortProjects(recent.filter((p) => !p.favorite));
+  if (pinned.length) {
+    const g = el("section", "hgrp");
+    const h = el("h2", "");
+    h.append(hsvg("star", "gold"), document.createTextNode("已收藏"), el("span", "cnt", String(pinned.length)));
+    g.append(h, listBlock(pinned));
+    main.append(g);
+  }
+  [0, 1].forEach((gi) => {
+    const arr = rest.filter((p) => groupOf(p.lastOpenedAt || p.updatedAt || 0) === gi);
+    if (!arr.length) return;
+    const g = el("section", "hgrp");
+    g.append(el("h2", "", GROUP_NAMES[gi]), listBlock(arr));
+    g.querySelector("h2").append(el("span", "cnt", String(arr.length)));
+    main.append(g);
+  });
+  if (older > 0) {
+    const more = el("button", "hmore", en() ? `${older} older project${older > 1 ? "s" : ""} in All projects` : `还有 ${older} 个更早的项目，在“全部项目”里`);
+    more.type = "button";
+    more.onclick = () => {
+      homeNav = "all";
+      lsSet("homeNav", "all");
+      renderHome();
+    };
+    main.append(more);
+  }
+}
+function renderTrash(main) {
+  const tr = (projState && projState.trash) || [];
+  const note = el("div", "hnote");
+  note.append(hsvg("archive"), el("span", "grow", "归档的项目不会出现在项目列表里。可以随时恢复；只有在这里才能永久删除。"));
+  if (tr.length) {
+    const ec = el("button", "btn danger-soft", "清空归档");
+    ec.type = "button";
+    ec.onclick = () => confirmInline(note, "清空归档？里面的项目会被永久删除，不能恢复。", "清空", () => api.projects.emptyTrash());
+    note.append(ec);
+  }
+  main.append(note);
+  if (!tr.length) return main.append(el("div", "hempty", "还没有归档的项目。"));
+  const list = el("div", "hlist");
+  for (const p of tr) {
+    const row = el("div", "hitem static");
+    row.append(thumbFor(p));
+    const info = el("div", "hinfo");
+    info.append(el("div", "hname", p.name), el("div", "hmeta", (en() ? "Archived " : "归档于 ") + fmtTime(p.trashedAt)));
+    row.append(info);
+    const act = el("div", "hact");
+    const rs = el("button", "btn", "恢复");
+    rs.type = "button";
+    rs.onclick = () => api.projects.restore(p.id);
+    const pg = el("button", "btn danger-soft", "永久删除");
+    pg.type = "button";
+    pg.onclick = () => confirmInline(row, `永久删除“${p.name}”？本地的聊天记录和步骤都会删除，不能恢复。不会影响 Tableau Public 上已发布的内容。`, "永久删除", () => api.projects.purge(p.id));
+    act.append(rs, pg);
+    row.append(act);
+    list.append(row);
+  }
+  main.append(list);
+}
+function confirmInline(host, text, okLabel, fn) {
+  const old = host.parentElement && host.parentElement.querySelector(".hconfirm");
+  if (old) old.remove();
+  const box = el("div", "hconfirm");
+  box.append(el("div", "", text));
+  const a = el("div", "acts");
+  const no = el("button", "btn", "取消");
+  no.type = "button";
+  no.onclick = () => box.remove();
+  const ok = el("button", "btn danger", okLabel);
+  ok.type = "button";
+  ok.onclick = () => {
+    ok.setAttribute("aria-disabled", "true");
+    Promise.resolve(fn());
+  };
+  a.append(no, ok);
+  box.append(a);
+  host.after(box);
+}
+function renderHome() {
+  renderHomeNav();
+  renderHomeBody();
+  document.querySelectorAll("#hview button").forEach((b) => b.classList.toggle("on", b.dataset.v === homeView));
+  $("hsort").value = homeSort;
+  $("hsort").hidden = homeNav === "trash";
+  $("hview").hidden = homeNav === "trash";
+}
+$("hq").oninput = () => {
+  homeQuery = $("hq").value.trim();
+  renderHomeBody();
+};
+$("hsort").onchange = () => {
+  homeSort = $("hsort").value;
+  lsSet("homeSort", homeSort);
+  renderHomeBody();
+};
+document.querySelectorAll("#hview button").forEach((b) => {
+  b.onclick = () => {
+    homeView = b.dataset.v;
+    lsSet("homeView", homeView);
+    renderHome();
+  };
+});
+$("hNew").onclick = () => api.projects.create();
+
+// 侧栏宽度：可拖动；最窄只显示图标和 logo
+const SIDE_MIN = 64;
+const SIDE_MAX = 340;
+const SIDE_COLLAPSE = 120;
+function setSideWidth(w, save) {
+  w = Math.max(SIDE_MIN, Math.min(SIDE_MAX, Math.round(w)));
+  const collapsed = w <= SIDE_COLLAPSE;
+  const side = $("hside");
+  side.style.width = collapsed ? SIDE_MIN + "px" : w + "px";
+  side.classList.toggle("collapsed", collapsed);
+  if (save) lsSet("homeSideW", String(collapsed ? SIDE_MIN : w));
+}
+setSideWidth(Number(lsGet("homeSideW", "232")), false);
+$("hresize").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  const side = $("hside");
+  const x0 = e.clientX;
+  const w0 = side.getBoundingClientRect().width;
+  $("hresize").setPointerCapture(e.pointerId);
+  document.body.classList.add("resizing");
+  const move = (ev) => setSideWidth(w0 + ev.clientX - x0, false);
+  const up = (ev) => {
+    $("hresize").removeEventListener("pointermove", move);
+    $("hresize").removeEventListener("pointerup", up);
+    document.body.classList.remove("resizing");
+    setSideWidth(w0 + ev.clientX - x0, true);
+  };
+  $("hresize").addEventListener("pointermove", move);
+  $("hresize").addEventListener("pointerup", up);
+});
+$("hresize").addEventListener("dblclick", () => setSideWidth($("hside").classList.contains("collapsed") ? 232 : SIDE_MIN, true));
+$("hresize").addEventListener("keydown", (e) => {
+  const w = $("hside").getBoundingClientRect().width;
+  if (e.key === "ArrowLeft") setSideWidth(w - 16, true);
+  if (e.key === "ArrowRight") setSideWidth(w + 16, true);
+});
+
+// ---------- 项目状态：主页 / 打开项目（还原聊天记录） ----------
+let shownProject = null;
+let restoring = false;
+async function restoreProject(id) {
+  restoring = true;
+  try {
+    await restoreProject0(id);
+  } finally {
+    restoring = false;
+  }
+}
+async function restoreProject0(id) {
+  log.innerHTML = welcomeOuter;
+  bindChips(log);
+  askCards.clear();
+  dynKey = "";
+  currentAi = currentThinking = currentSteps = null;
+  stepNodes.clear();
+  if (liveNode) { clearInterval(liveTimer); liveNode = null; }
+  usage = { model: "", input: 0, output: 0, cacheRead: 0 };
+  setRunning(false);
+  let h = [];
+  try {
+    h = (await api.projects.history(id)) || [];
+  } catch {}
+  if (activeProjectId !== id) return;
+  if (!h.length) {
+    if (lastTableauState) refreshWelcome(lastTableauState);
+    return;
+  }
+  $("welcome")?.remove();
+  replaying = true;
+  try {
+    for (const ev of h) {
+      if (ev.type === "user") {
+        liveEnd();
+        retireGuides();
+        const b = el("div", "msg user", ev.text || "（附件）");
+        if (ev.steer) b.append(el("span", "mode", "引导"));
+        add(b);
+        currentAi = currentThinking = currentSteps = null;
+      } else if (["ask", "confirm", "ask_resolved", "status", "usage", "plan"].includes(ev.type)) continue;
+      else handleAgentEvent(ev);
+    }
+    if (!(projState && projState.runningId === id)) liveEnd();
+  } finally {
+    replaying = false;
+  }
+  currentAi = currentThinking = currentSteps = null;
+  if (projState && projState.runningId === id) {
+    running = false;
+    setRunning(true); // 这个项目的任务还在跑：保留进度块和“停止”按钮
+  } else {
+    log.querySelectorAll(".dstep.run").forEach((x) => x.classList.remove("run"));
+    setStatus("");
+  }
+  renderQueue();
+  if (!running) flushQueue();
+  scrollDown();
+}
+function applyProjectState(st) {
+  projState = st;
+  activeProjectId = st.activeId || "";
+  const home = !!st.home;
+  document.body.classList.toggle("in-home", home);
+  document.body.classList.toggle("no-tabs", home && !(st.projects || []).length);
+  $("home").classList.toggle("hidden", !home);
+  if (home) {
+    closeMenu();
+    renderHome();
+  } else if (activeProjectId && shownProject !== activeProjectId) {
+    shownProject = activeProjectId;
+    restoreProject(activeProjectId);
+  }
+  if (home) shownProject = null;
+  // 停止按钮跟着“当前项目是否在运行”走：别的项目在跑时，这个项目不显示停止
+  if (!home && st.runningId) {
+    if (st.runningId === activeProjectId && !running && shownProject === activeProjectId && !restoring) setRunning(true);
+    else if (st.runningId !== activeProjectId && running) setRunning(false);
+  }
+  renderQueue();
+  paintSaveDot();
+}
+
+// ---------- 本机权限：逐项允许；必需项没通过就无法使用 ----------
+const PERM_ICON = {
+  consent: '<path d="M10 3l6 2.2v4.6c0 3.4-2.4 6-6 7.2-3.6-1.2-6-3.8-6-7.2V5.2z"/><path d="M7.5 10l2 2 3.5-4"/>',
+  files: HICON.folder,
+  docs: '<path d="M5.5 3h6l3.5 3.5V17h-9.5z"/><path d="M11.5 3v3.5H15M8 10.5h4.5M8 13.5h4.5"/>',
+  keychain: '<rect x="4.5" y="9" width="11" height="7.5" rx="2"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>',
+  voice: '<rect x="7.5" y="2.5" width="5" height="9.5" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/>',
+};
+let permBoxes = new Set();
+async function renderPerms(box, onChange) {
+  permBoxes.add(box);
+  let items = [];
+  try {
+    items = api.permissions ? await api.permissions.list() : [];
+  } catch {}
+  box.innerHTML = "";
+  for (const it of items) {
+    const ok = it.status === "granted" || it.status === "unknown";
+    const row = el("div", "perm" + (ok ? " ok" : ""));
+    const ic = el("span", "pi");
+    ic.append(hsvg("home"));
+    ic.firstChild.innerHTML = PERM_ICON[it.id] || PERM_ICON.consent;
+    const t = el("div", "pt");
+    const tt = el("div", "ptt", it.title);
+    if (!it.required) tt.append(el("span", "popt", "可选"));
+    t.append(tt, el("div", "pd", it.desc));
+    row.append(ic, t);
+    const act = el("div", "pa");
+    if (ok) {
+      const g = el("span", "pgot");
+      g.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></svg>';
+      g.append(document.createTextNode(it.id === "consent" ? "已同意" : "已允许"));
+      act.append(g);
+    } else {
+      const denied = it.status === "denied" && it.canOpenSettings;
+      const b = el("button", "btn " + (it.required ? "primary" : ""), denied ? "去系统设置" : it.id === "consent" ? "同意" : "允许");
+      b.type = "button";
+      b.onclick = async () => {
+        b.setAttribute("aria-disabled", "true");
+        try {
+          if (denied) await api.permissions.openSettings(it.id);
+          else await api.permissions.request(it.id);
+        } catch {}
+        renderPerms(box, onChange);
+      };
+      act.append(b);
+    }
+    if (it.id === "docs" && api.docs) {
+      const c = el("button", "btn", "换个位置");
+      c.type = "button";
+      c.onclick = async () => {
+        let d = null;
+        try {
+          d = await api.docs.choose();
+        } catch {}
+        if (d && d.error) showToast(d.error, null, 4);
+        renderPerms(box, onChange);
+      };
+      act.prepend(c);
+    }
+    row.append(act);
+    box.append(row);
+  }
+  if (onChange) onChange(items.filter((x) => x.required).every((x) => x.status === "granted" || x.status === "unknown"));
+}
+// 从系统设置回到软件时，重新检查一遍
+window.addEventListener("focus", () => {
+  permBoxes.forEach((b) => {
+    if (!b.isConnected) permBoxes.delete(b);
+  });
+  const ob2 = $("onboard");
+  if (!ob2.classList.contains("hidden") && ob.step === 3) obRender();
+  if (!$("settings").classList.contains("hidden") && $("permList")) renderPerms($("permList"));
+});
+function resetRevoke() {
+  const host = $("revokeBox");
+  host.innerHTML = "";
+  const b = el("button", "btn quiet danger", "撤回同意…");
+  b.id = "btnRevoke";
+  b.type = "button";
+  b.onclick = askRevoke;
+  host.append(b);
+}
+function askRevoke() {
+  const host = $("revokeBox");
+  host.innerHTML = "";
+  const row = el("div", "clearask");
+  row.append(el("div", "", "撤回同意后，TabPilot 会停在权限页，重新同意后才能继续使用。你的项目和设置不会被删除。"));
+  const acts = el("div", "acts");
+  const no = el("button", "btn", "取消");
+  no.type = "button";
+  no.onclick = resetRevoke;
+  const yes = el("button", "btn danger", "撤回同意");
+  yes.type = "button";
+  yes.onclick = async () => {
+    yes.setAttribute("aria-disabled", "true");
+    try {
+      await api.permissions.revokeConsent();
+    } catch {}
+    closeSettings();
+    openOnboard({ gate: true });
+  };
+  acts.append(no, yes);
+  row.append(acts);
+  host.append(row);
+}
+$("btnRevoke").onclick = askRevoke;
 
 // ---------- 项目标签（每个项目 = 右侧一个独立的 Tableau 页面） ----------
 const TAB_ICONS = {
@@ -1725,9 +2795,14 @@ function renderTabs(st) {
     x.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M5 5l10 10M15 5L5 15"/></svg>';
     x.onclick = (e) => {
       e.stopPropagation();
-      api.projects.close(p.id);
+      askCloseProject(p);
     };
     t.append(x);
+    if (isUnsaved(p)) {
+      const u = el("span", "udot");
+      u.dataset.tip = "有没保存的改动";
+      t.insertBefore(u, x);
+    }
     t.onclick = () => p.id !== st.activeId && api.projects.switch(p.id);
     t.onkeydown = (e) => {
       if (e.key === "Enter" || e.key === " ") t.click();
@@ -1743,7 +2818,13 @@ function renderTabs(st) {
         api.projects.reorder(ids);
       }
     };
-    nm.ondblclick = (e) => {
+    if (st.runningId === p.id) {
+      t.classList.add("running");
+      t.append(el("span", "rdot"));
+      t.dataset.tip = "正在执行任务";
+    }
+    nm.ondblclick = t.oncontextmenu = (e) => {
+      e.preventDefault();
       e.stopPropagation();
       const inp = el("input");
       inp.value = p.name;
@@ -1797,8 +2878,8 @@ function renderTabs(st) {
   box.append(add);
 }
 if (api.projects) {
-  api.projects.list().then(renderTabs);
-  api.onProjects(renderTabs);
+  api.projects.list().then((st) => (renderTabs(st), applyProjectState(st)));
+  api.onProjects((st) => (renderTabs(st), applyProjectState(st)));
 }
 // 标签栏画在窗口顶部，右侧 Tableau 视图要让出这一行
 if (api.setTopInset) api.setTopInset(52);
@@ -1807,7 +2888,15 @@ refreshSettings().then(async (s) => {
   applyWidth(s.splitLeft);
   const configured = api.providers && api.providers.isConfigured ? await api.providers.isConfigured() : !!s.hasKey[s.provider];
   if (!configured) openOnboard();
-  else if (!coachDone()) showCoach();
+  else {
+    // API 已设置：权限没通过就停在权限页
+    let ready = true;
+    try {
+      ready = api.permissions ? await api.permissions.ready() : true;
+    } catch {}
+    if (!ready) openOnboard({ gate: true });
+    else if (!coachDone()) showCoach();
+  }
 });
 
 // 最后启动界面语言（翻译已有的和之后出现的文案）

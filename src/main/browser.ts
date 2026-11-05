@@ -1,5 +1,5 @@
 // 右侧 Tableau 页面的控制层：通过 CDP 发送真实的鼠标/键盘事件、截图，并在各个 frame 里读取页面结构
-import { WebContents, WebFrameMain } from "electron";
+import { nativeImage, WebContents, WebFrameMain } from "electron";
 import fs from "fs";
 import { CMD_MODIFIER_BIT } from "./platform";
 import path from "path";
@@ -151,16 +151,16 @@ export class TableauBrowser {
     await this.ensureAttached();
     const { w, h } = await this.viewportSize();
     const scale = Math.min(1, maxEdge / Math.max(w, h));
-    const dpr = (await this.cmd("Runtime.evaluate", { expression: "window.devicePixelRatio", returnByValue: true })).result?.value || 1;
     // 发给模型的截图用 JPEG，体积约为 PNG 的三分之一，长任务里历史不会膨胀太快
-    const res = await this.cmd("Page.captureScreenshot", {
-      format: "jpeg",
-      quality: 75,
-      clip: { x: 0, y: 0, width: w, height: h, scale: scale / dpr },
-      captureBeyondViewport: false,
-    });
+    // 不带 clip/scale 截图：带缩放的 clip 会让 Chromium 临时改设备尺寸重排页面，右侧画面会闪一下。
+    // 按原尺寸截下来，再在主进程里缩小
+    const res = await this.cmd("Page.captureScreenshot", { format: "jpeg", quality: 80, captureBeyondViewport: false });
     this.lastShotScale = scale;
-    return { data: res.data, width: Math.round(w * scale), height: Math.round(h * scale), scale };
+    const width = Math.round(w * scale);
+    const height = Math.round(h * scale);
+    let img = nativeImage.createFromBuffer(Buffer.from(res.data, "base64"));
+    if (img.getSize().width !== width) img = img.resize({ width, height, quality: "good" });
+    return { data: img.toJPEG(75).toString("base64"), width, height, scale };
   }
 
   toPage(x: number, y: number, space: "screenshot" | "page" = "screenshot") {
@@ -401,8 +401,8 @@ export class TableauBrowser {
     return true;
   }
 
-  // AI 光标：紫色箭头 + 70% 不透明的模型名牌（不放其他文字说明），画在页面最上层、不拦截鼠标，约 1 秒无动作后淡出；教程模式停留更久。
-  static agentName = "Claude";
+  // 操作光标：紫色箭头 + 70% 不透明的“TabPilot”名牌（不随模型变，不写 AI），画在页面最上层、不拦截鼠标，约 1 秒无动作后淡出；教程模式停留更久。
+  static agentName = "TabPilot";
 
   private async cursor(op: { x?: number; y?: number; press?: boolean; caption?: string; tutorial?: boolean; instant?: boolean }) {
     const script = `(() => {
@@ -415,7 +415,7 @@ export class TableauBrowser {
         root.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:2147483647;transition:transform .32s cubic-bezier(.3,.7,.2,1),opacity .25s;opacity:0;will-change:transform';
         root.innerHTML = '<style>#__tai_cursor *{pointer-events:none;box-sizing:border-box}#__tai_cursor .p{transform-origin:2px 2px;transition:transform .12s}#__tai_cursor.press .p{transform:scale(.8)}#__tai_cursor .tag{position:absolute;left:14px;top:18px;display:flex;align-items:center;gap:4px;white-space:nowrap;background:linear-gradient(135deg,#7c5cff,#27c6f2);color:#fff;font:600 11px/18px -apple-system,PingFang SC,sans-serif;padding:0 9px 0 3px;border-radius:99px;box-shadow:0 4px 12px rgba(124,92,255,.45)}#__tai_cursor .tag b{width:14px;height:14px;border-radius:50%;background:#fff;color:#7c5cff;font-size:8px;line-height:14px;text-align:center}#__tai_cursor .cap{position:absolute;left:14px;top:42px;max-width:260px;width:max-content;background:rgba(28,27,51,.92);color:#fff;font:13px/1.45 -apple-system,PingFang SC,sans-serif;padding:6px 10px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.25);display:none}</style>' +
           '<svg class="p" width="20" height="24" viewBox="0 0 22 26" style="position:absolute;left:-2px;top:-2px;filter:drop-shadow(0 3px 6px rgba(60,40,160,.4))"><path d="M2 2l16 10-7 2-3 7z" fill="#7c5cff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>' +
-          '<div class="tag" style="opacity:.7"><b>AI</b><span class="nm"></span></div><div class="cap" style="display:none"></div>';
+          '<div class="tag" style="opacity:.7;padding-left:9px"><span class="nm"></span></div><div class="cap" style="display:none"></div>';
         document.documentElement.appendChild(root);
       }
       root.querySelector('.nm').textContent = op.name;
@@ -452,7 +452,7 @@ export class TableauBrowser {
   }
 
   // 判断右侧页面在账户/登录流程的哪一步（只读，不点击、不读输入框内容）
-  async authState(): Promise<{ state: string; url: string; title: string }> {
+  async authState(): Promise<{ state: string; url: string; title: string; expired?: boolean }> {
     const url = this.wc.getURL();
     const script = `(() => {
       const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 1 && r.height > 1 && getComputedStyle(el).visibility !== 'hidden'; };
@@ -470,6 +470,9 @@ export class TableauBrowser {
         verifyText: /(验证码|verification code|verify your email|验证您的电子邮件|check your email|查看您的邮箱)/i.test(text),
         signupText: /(create (an |your )?account|创建(您的)?帐户|创建账户|注册 Tableau)/i.test(text),
         editor: !!document.getElementById('shelf-columns'),
+        // 未保存的 Web 制作草稿在 Tableau 服务器上过期后，重新打开会报“意外错误 / Failed to fetch”
+        missing: /(找不到(该|此|这个)?(页面|作品|可视化)|页面不存在|Page Not Found|can'?t find (that|this) (page|viz)|no longer available|已被删除)/i.test(text),
+        broken: /(意外错误|Unexpected error|Failed to fetch|something has gone wrong rendering|会话已过期|session (has )?expired|无法(打开|加载)(此|该)?工作簿|could not (open|load) (the |this )?workbook)/i.test(text),
         title: document.title,
       };
     })()`;
@@ -481,6 +484,9 @@ export class TableauBrowser {
     }
     let state = "other";
     if (r.cookie) state = "cookie-banner";
+    // 过期草稿有两种表现：停在 newWorkbook 页报“意外错误”，或被跳到 viz_load_error.html
+    else if (!r.editor && (/\/viz_load_error\.html/i.test(url) || (r.broken && /\/newWorkbook\//i.test(url)))) state = "draft-lost";
+    else if ((r.missing || r.broken) && !r.editor && /\/(authoring|viz)\//i.test(url)) state = "published-lost";
     else if (r.editor) state = "authoring";
     else if (r.code || r.verifyText) state = "verify";
     else if (r.signupText && (r.pwd || r.email)) state = "signup-page";

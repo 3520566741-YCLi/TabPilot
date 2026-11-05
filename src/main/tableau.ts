@@ -678,6 +678,120 @@ export class TableauOps {
   }
 
   // 工具栏“下载”菜单导出当前工作表；有对话框时点里面的“下载”
+  // ---------- 保存（发布到 Tableau Public）----------
+  // Tableau Public 网页版没有“存到本地”，保存就是发布。这里按固定步骤做，避免助手自己反复摸索：
+  // 第一次：顶栏“发布为...” → 对话框填名称 → 点对话框里的“发布”；之后：点顶栏“发布”覆盖同一个工作簿。
+  // 顶栏上的提示条（例如“上次编辑已恢复……”）会盖住发布按钮：先把它们关掉
+  private async dismissBanners() {
+    const pts = (await this.b.wc.mainFrame.executeJavaScript(`(() => {
+      const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 1 && r.height > 1; };
+      const out = [];
+      for (const a of document.querySelectorAll('[role=alert],[role=status],[class*=Toast],[class*=toast],[class*=Banner],[class*=banner],[class*=Notification]')) {
+        if (!vis(a)) continue;
+        const btn = [...a.querySelectorAll('button,[role=button]')].find((x) => vis(x) && /关闭|Close|Dismiss|×|✕/i.test((x.getAttribute('aria-label') || x.title || x.textContent || '').trim()));
+        if (btn) { const r = btn.getBoundingClientRect(); out.push({ x: r.x + r.width / 2, y: r.y + r.height / 2 }); }
+      }
+      return out;
+    })()`)) as { x: number; y: number }[];
+    for (const p of pts) {
+      await this.b.click(p.x, p.y).catch(() => {});
+      await sleep(300);
+    }
+    // 没有关闭按钮的提示条：按一次 Esc 让它收起
+    if (!pts.length) await this.b.key("Escape").catch(() => {});
+  }
+
+  async publish(name: string, overwrite: boolean): Promise<{ ok: boolean; text: string }> {
+    const b = this.b;
+    await this.dismissBanners();
+    if (overwrite) {
+      const btn = await this.waitFor((e) => e.role.startsWith("button") && /^(发布|Publish)$/.test(e.name), 4000, "发布");
+      if (btn) {
+        await this.hl([{ x: btn.x, y: btn.y }], L("发布（覆盖保存）", "Publish (overwrite)"));
+        await b.click(btn.x, btn.y);
+        const done = await this.waitPublishDone(90000);
+        return done ? { ok: true, text: "已覆盖保存到同一个工作簿。" } : { ok: false, text: "点了“发布”，但 90 秒内没看到完成提示。" };
+      }
+      // 没有“发布”按钮（例如打开的是草稿）就退回“发布为”
+    }
+    const asBtn = await this.waitFor((e) => e.role.startsWith("button") && /^(发布为|Publish As)/.test(e.name), 8000, "发布");
+    if (!asBtn) return { ok: false, text: "没找到“发布为...”按钮，可能还没进入编辑界面。" };
+    await this.hl([{ x: asBtn.x, y: asBtn.y }], L("发布为", "Publish As"));
+    await b.click(asBtn.x, asBtn.y);
+    // 对话框里的名称输入框
+    let input: { x: number; y: number } | null = null;
+    for (let i = 0; i < 20 && !input; i++) {
+      await sleep(400);
+      input = (await b.wc.mainFrame.executeJavaScript(`(() => {
+        const d = [...document.querySelectorAll('[role=dialog]')].find((x) => /发布工作簿|Publish Workbook/.test(x.innerText));
+        const i = d && d.querySelector('input[type=text], input:not([type])');
+        if (!i) return null;
+        const r = i.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`)) as { x: number; y: number } | null;
+    }
+    if (!input) return { ok: false, text: "“发布工作簿”对话框没有出现。" };
+    await b.click(input.x, input.y, { clickCount: 3 });
+    await b.key("cmd+a").catch(() => {});
+    await b.typeText(name);
+    await sleep(500);
+    const go = await this.waitFor((e) => e.role === "button" && /^(发布|Publish)$/.test(e.name) && e.y > 200, 5000);
+    if (!go) return { ok: false, text: "对话框里的“发布”按钮不可用（名称可能没填上）。" };
+    await this.hl([{ x: go.x, y: go.y }], L("发布", "Publish"));
+    await b.click(go.x, go.y);
+    const done = await this.waitPublishDone(120000);
+    return done ? { ok: true, text: "已发布。" } : { ok: false, text: "点了“发布”，但 2 分钟内对话框没有关闭。" };
+  }
+
+  // 发布完成：对话框消失、没有“正在发布”的提示
+  private async waitPublishDone(timeoutMs: number): Promise<boolean> {
+    const end = Date.now() + timeoutMs;
+    await sleep(1500);
+    while (Date.now() < end) {
+      if (this.stopped()) return false;
+      const busy = (await this.b.wc.mainFrame.executeJavaScript(`(() => {
+        const t = document.body.innerText;
+        const dlg = [...document.querySelectorAll('[role=dialog]')].some((x) => /发布工作簿|Publish Workbook|正在发布|Publishing/.test(x.innerText));
+        return dlg || /正在发布|Publishing\.\.\./.test(t);
+      })()`)) as boolean;
+      if (!busy) return true;
+      await sleep(1000);
+    }
+    return false;
+  }
+
+  // 当前登录的 Tableau Public 用户名：查一个不存在用户的隐藏作品，接口会在报错里说出“谁”在查
+  async currentProfile(): Promise<string | null> {
+    const msg = (await this.b.wc.mainFrame.executeJavaScript(
+      `fetch('https://public.tableau.com/public/apis/workbooks?profileName=tabpilot-whoami-probe&start=0&count=1&visibility=HIDDEN',{credentials:'include'}).then(r=>r.text()).catch(()=> '')`,
+    )) as string;
+    const m = /"message":"([^"\s]+) can't see hidden workbooks/.exec(msg || "");
+    return m ? m[1] : null;
+  }
+
+  // 在自己的作品里按名称找（先找隐藏的，再找主页上显示的）
+  async findWorkbook(profile: string, title: string): Promise<{ repo: string; view: string; hidden: boolean } | null> {
+    for (const vis of ["HIDDEN", "NON_HIDDEN"]) {
+      const list = (await this.b.wc.mainFrame.executeJavaScript(
+        `fetch('https://public.tableau.com/public/apis/workbooks?profileName=${encodeURIComponent(profile)}&start=0&count=50&visibility=${vis}',{credentials:'include'}).then(r=>r.json()).then(j=>Array.isArray(j.contents)?j.contents:[]).catch(()=>[])`,
+      )) as { title: string; workbookRepoUrl: string; defaultViewRepoUrl: string }[];
+      const hit = list.find((w) => w.title === title);
+      if (hit) return { repo: hit.workbookRepoUrl, view: hit.defaultViewRepoUrl, hidden: vis === "HIDDEN" };
+    }
+    return null;
+  }
+
+  async listWorkbooks(profile: string): Promise<{ title: string; repo: string; hidden: boolean }[]> {
+    const out: { title: string; repo: string; hidden: boolean }[] = [];
+    for (const vis of ["HIDDEN", "NON_HIDDEN"]) {
+      const list = (await this.b.wc.mainFrame.executeJavaScript(
+        `fetch('https://public.tableau.com/public/apis/workbooks?profileName=${encodeURIComponent(profile)}&start=0&count=50&visibility=${vis}',{credentials:'include'}).then(r=>r.json()).then(j=>Array.isArray(j.contents)?j.contents:[]).catch(()=>[])`,
+      )) as { title: string; workbookRepoUrl: string }[];
+      for (const w of list) out.push({ title: w.title, repo: w.workbookRepoUrl, hidden: vis === "HIDDEN" });
+    }
+    return out;
+  }
+
   async exportView(format: string): Promise<string> {
     const MAP: [RegExp, RegExp][] = [
       [/^(image|png|图像|图片)$/i, /^图像$|^Image$/],
@@ -719,4 +833,5 @@ export class TableauOps {
     if (d.state !== "completed") return `下载没有完成（${d.state}）。`;
     return `已导出到：${d.path}`;
   }
+
 }

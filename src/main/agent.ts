@@ -1,5 +1,6 @@
 // AI 层：与提供方无关的 Agent 外壳 + Claude 原生适配器 + OpenAI 兼容适配器（OpenAI、Gemini、通义、智谱、Kimi、豆包、Grok、Mistral、DeepSeek）。
 // 工具定义与执行都来自 ToolHost，适配器只负责各自的消息格式和请求。
+import { stepLabel } from "./steplabel";
 import Anthropic from "@anthropic-ai/sdk";
 import { ToolHost, TOOL_DEFS, ToolResult } from "./tools";
 import { ProviderId } from "./settings";
@@ -11,13 +12,15 @@ import { L } from "./i18n";
 export type AgentEvent =
   | { type: "text"; delta: string }
   | { type: "thinking"; delta: string }
-  | { type: "tool"; id: string; name: string; input: unknown }
+  | { type: "tool"; id: string; name: string; input: unknown; label: string } // label：给人看的一句话（按界面语言），界面只显示它
   | { type: "tool_result"; id: string; text: string; isError?: boolean; image?: string }
   | { type: "ask"; id: string; question: string; options: string[]; danger?: boolean }
   | { type: "confirm"; id: string; title: string; steps: { text: string; danger?: boolean }[]; danger?: boolean; okLabel: string; cancelLabel: string }
   | { type: "change"; id: string; text: string; undoable: boolean }
   | { type: "ask_resolved"; id: string; answer: string }
-  | { type: "suggest"; id: string; title: string; detail: string; actions: { id: string; label: string }[]; multi?: boolean }
+  | { type: "plan"; id: string; title: string; steps: { text: string; danger?: boolean }[] }
+  | { type: "guide"; id: string; step?: number; total?: number; instruction: string; why: string; highlighted: boolean } // 教我做：这一步让用户自己做
+  | { type: "suggest"; id: string; title: string; detail: string; actions: { id: string; label: string }[]; multi?: boolean; pick?: boolean }
   | { type: "status"; text: string }
   | { type: "file"; path: string }
   | { type: "usage"; model: string; input: number; output: number; cacheRead: number }
@@ -40,11 +43,13 @@ const langNote = (lang?: string) =>
 
 const TUTORIAL_ON = `
 
-【教程模式：开启】用户想边看边学会自己做。请这样做：
-1. 开始前用两三句话说明这张图的思路（用哪些字段、为什么这样放）。
-2. 每次在 Tableau 里操作之前，先用一句话写出“人类该怎么手动做”：在界面的哪个区域（左侧数据窗格/顶部列功能区/行功能区/标记卡…）、点什么或把哪个字段拖到哪里。右侧页面会同步高亮你操作的位置。
-3. 优先用用户能模仿的方式：把字段拖到功能区（add_to_shelf 的 method="drag"）、点标记卡下拉框选标记类型。键入表达式也可以，但要说明“双击功能区空白处可以直接输入公式”。
-4. 做完后给一份编号的“手动操作步骤清单”，让用户能照着自己重做一遍，并说明常见的坑。`;
+【教我做：开启】用户要自己动手学会，你是在旁边带着做的老师，不是替他做：
+1. 先用两三句话讲清这张图的思路（用哪些字段、各放哪里、为什么），说一共几步。不要一次列出全部步骤。
+2. 然后一次只教一步：调用 guide_step 高亮要点的位置，instruction 写怎么做（在哪里、点什么、把哪个字段拖到哪里），why 写为什么。调用后这一轮就结束，等用户自己做。
+3. 用户说“做好了”：先用 tableau_state 检查这一步。做对了，用一句话肯定，再 guide_step 下一步；没做对，具体指出哪里不一样、怎么改，让用户再试。
+4. 用户说“慢一点”或提问：先用更细的话解释（可以拆成更小的步骤），再继续同一步，不要跳步。
+5. 用户说“这步帮我做”：只替他做这一步（可以用操作工具），做完说明你做了什么，再 guide_step 下一步。用户说“直接做”或“剩下的你来”：把剩下的步骤自己做完。
+6. 全部做完后用一条消息总结，并给一份简短的步骤清单方便以后自己复习。`;
 const TUTORIAL_OFF = `
 
 【教程模式：关闭】直接完成任务，不必讲解每一步，结束时简要汇报结果。`;
@@ -74,6 +79,21 @@ export interface AgentOptions {
 interface ProviderAdapter {
   runTurn(input: UserInput, signal: AbortSignal): Promise<void>;
   setKey(key: string, model: string): void;
+  getMessages(): unknown[];
+  setMessages(m: unknown[]): void;
+}
+
+// 保存到本地前把图片换成文字占位（截图只在当次对话里有用，存下来太大）
+function stripImages(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(stripImages);
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (o.type === "image" || o.type === "image_url") return { type: "text", text: "[截图已省略]" };
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(o)) out[k] = stripImages(val);
+    return out;
+  }
+  return v;
 }
 
 const MAX_STEPS = 160;
@@ -83,10 +103,13 @@ export class Agent {
   provider: ProviderId;
   private adapter: ProviderAdapter;
   private abort: AbortController | null = null;
+  // 运行中用户插话（引导）：在下一次请求模型前并入上下文
+  private steerQueue: string[] = [];
 
   constructor(private o: AgentOptions) {
     this.provider = o.provider;
-    this.adapter = o.provider === "claude" ? new ClaudeAdapter(o, () => this.stopped()) : new OpenAICompatAdapter(o, () => this.stopped());
+    const take = () => this.steerQueue.splice(0);
+    this.adapter = o.provider === "claude" ? new ClaudeAdapter(o, () => this.stopped(), take) : new OpenAICompatAdapter(o, () => this.stopped(), take);
   }
 
   updateKey(key: string, model: string) {
@@ -97,11 +120,24 @@ export class Agent {
     return !!this.abort?.signal.aborted;
   }
 
+  // 运行中才接受引导；返回 false 表示当前没有任务在跑，应当按普通消息发送
+  steer(text: string): boolean {
+    if (!this.running || !text.trim()) return false;
+    this.steerQueue.push(text.trim().slice(0, 4000));
+    return true;
+  }
+
   async run(input: UserInput) {
     this.running = true;
     this.abort = new AbortController();
+    this.steerQueue = [];
     try {
       await this.adapter.runTurn(input, this.abort.signal);
+      // 模型已经收尾但还有没并进去的引导：接着按新消息处理
+      while (this.steerQueue.length && !this.abort.signal.aborted) {
+        const t = this.steerQueue.splice(0).join("\n");
+        await this.adapter.runTurn({ text: t, lang: input.lang, tutorial: input.tutorial }, this.abort.signal);
+      }
       this.o.emit({ type: "done", stopped: this.abort.signal.aborted });
     } catch (e) {
       if (this.abort.signal.aborted) this.o.emit({ type: "done", stopped: true });
@@ -117,6 +153,21 @@ export class Agent {
   stop() {
     this.abort?.abort();
   }
+
+  // 项目的 AI 上下文：保存到本地、重新打开项目时恢复
+  exportHistory(): { provider: ProviderId; messages: unknown[] } {
+    return { provider: this.provider, messages: stripImages(this.adapter.getMessages()) as unknown[] };
+  }
+
+  importHistory(h: unknown) {
+    const d = h as { provider?: string; messages?: unknown[] } | null;
+    if (!d || d.provider !== this.provider || !Array.isArray(d.messages)) return;
+    this.adapter.setMessages(d.messages);
+  }
+}
+
+function steerNote(list: string[]): string {
+  return `用户在你操作过程中补充（请立即考虑，必要时调整接下来的做法）：\n${list.join("\n")}`;
 }
 
 function describeError(e: unknown): string {
@@ -130,7 +181,7 @@ function describeError(e: unknown): string {
 }
 
 async function runTool(o: AgentOptions, id: string, name: string, input: unknown): Promise<ToolResult> {
-  o.emit({ type: "tool", id, name, input });
+  o.emit({ type: "tool", id, name, input, label: stepLabel(name, input) });
   let result: ToolResult;
   try {
     result = await o.tools.execute(name, input ?? {});
@@ -148,7 +199,19 @@ class ClaudeAdapter implements ProviderAdapter {
   private model: string;
   private messages: Anthropic.Beta.BetaMessageParam[] = [];
 
-  constructor(private o: AgentOptions, private isStopped: () => boolean) {
+  getMessages() {
+    return this.messages;
+  }
+
+  setMessages(m: unknown[]) {
+    this.messages = m as Anthropic.Beta.BetaMessageParam[];
+  }
+
+  constructor(
+    private o: AgentOptions,
+    private isStopped: () => boolean,
+    private takeSteer: () => string[] = () => [],
+  ) {
     this.client = new Anthropic({ apiKey: o.apiKey });
     this.model = o.model;
   }
@@ -233,7 +296,9 @@ class ClaudeAdapter implements ProviderAdapter {
         if (r.image) content.push({ type: "image", source: { type: "base64", media_type: r.image.mediaType, data: r.image.data } });
         results.push({ type: "tool_result", tool_use_id: tu.id, content, is_error: r.isError || undefined });
       }
-      this.messages.push({ role: "user", content: results });
+      const steer = this.takeSteer();
+      const extra: Anthropic.Beta.BetaTextBlockParam[] = steer.length ? [{ type: "text", text: steerNote(steer) }] : [];
+      this.messages.push({ role: "user", content: [...results, ...extra] });
       trimOldScreenshots(this.messages);
       if (this.isStopped() || message.stop_reason === "max_tokens") return;
     }
@@ -276,11 +341,24 @@ class OpenAICompatAdapter implements ProviderAdapter {
   private key: string;
   private model: string;
   private messages: OAMessage[] = [];
+
+  getMessages() {
+    return this.messages;
+  }
+
+  setMessages(m: unknown[]) {
+    this.messages = m as OAMessage[];
+  }
   private baseURL: string;
   private label: string;
   private vision: boolean;
+  private probed = false;
 
-  constructor(private o: AgentOptions, private isStopped: () => boolean) {
+  constructor(
+    private o: AgentOptions,
+    private isStopped: () => boolean,
+    private takeSteer: () => string[] = () => [],
+  ) {
     this.key = o.apiKey;
     this.model = o.model;
     const info = providerInfo(o.provider)!;
@@ -296,10 +374,11 @@ class OpenAICompatAdapter implements ProviderAdapter {
 
   async runTurn(input: UserInput, signal: AbortSignal) {
     // 能不能看图按具体模型实测一次（结果缓存）
-    if (this.messages.length === 0) {
+    if (!this.probed) {
+      this.probed = true;
       this.vision = await probeVision(this.o.provider, this.baseURL, this.key, this.model);
-      this.messages.push({ role: "system", content: systemPrompt(this.vision) });
     }
+    if (this.messages.length === 0) this.messages.push({ role: "system", content: systemPrompt(this.vision) });
     // 新一轮用户输入开始：上一轮的推理内容不再回传
     for (const m of this.messages) delete m.reasoning_content;
     let text = (input.text || "（见附件）") + (await describeFiles(input.files)) + (input.tutorial ? TUTORIAL_ON : TUTORIAL_OFF) + langNote(input.lang);
@@ -341,7 +420,7 @@ class OpenAICompatAdapter implements ProviderAdapter {
         try {
           input = JSON.parse(c.function.arguments || "{}");
         } catch {
-          this.o.emit({ type: "tool", id: c.id, name: c.function.name, input: c.function.arguments });
+          this.o.emit({ type: "tool", id: c.id, name: c.function.name, input: c.function.arguments, label: stepLabel(c.function.name, c.function.arguments) });
           const t = "参数不是合法 JSON，请重新调用。";
           this.o.emit({ type: "tool_result", id: c.id, text: t, isError: true });
           this.messages.push({ role: "tool", tool_call_id: c.id, content: t });
@@ -357,6 +436,8 @@ class OpenAICompatAdapter implements ProviderAdapter {
         for (const d of pendingImages) parts.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${d}` } });
         this.messages.push({ role: "user", content: parts });
       }
+      const steer = this.takeSteer();
+      if (steer.length) this.messages.push({ role: "user", content: steerNote(steer) });
       if (truncated) return;
     }
     this.o.emit({ type: "error", text: L(`已执行 ${MAX_STEPS} 步仍未完成，已自动停止。`, `Not finished after ${MAX_STEPS} steps. Stopped.`) });

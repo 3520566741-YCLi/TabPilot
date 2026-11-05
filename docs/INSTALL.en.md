@@ -1,8 +1,8 @@
 # Installing TabPilot on a Mac
 
 ## Which file to download
-- Apple silicon Mac (M1/M2/M3/M4…): `TabPilot-<version>-mac-apple-silicon.dmg` (“M芯片版” = M chip)
-- Intel Mac: `TabPilot-<version>-mac-intel.dmg` (“英特尔芯片版” = Intel)
+- Apple silicon Mac (M1/M2/M3/M4…): `TabPilot-<version>-mac-apple-silicon.dmg`
+- Intel Mac: `TabPilot-<version>-mac-intel.dmg`
 - Not sure? Apple menu > About This Mac: “Chip: Apple M…” means M chip, “Intel” means Intel.
 
 Not sure? Apple menu → About This Mac, and look at "Chip".
@@ -13,7 +13,7 @@ Not sure? Apple menu → About This Mac, and look at "Chip".
    - In Applications, **right-click** TabPilot → Open → Open.
    - If it still won't open: System Settings → Privacy & Security, scroll down to TabPilot and click "Open Anyway".
 3. After that, just double-click it.
-4. When TabPilot first reads your saved API key, macOS asks whether TabPilot may use "Tableau AI Safe Storage" in your keychain. Click "Always Allow" (macOS asks for your Mac password; that prompt comes from macOS, and the password never goes through TabPilot). This happens again once after each update.
+4. When TabPilot first reads your saved API key, macOS asks whether TabPilot may use "TabPilot Safe Storage" in your keychain. Click "Always Allow" (macOS asks for your Mac password; that prompt comes from macOS, and the password never goes through TabPilot). This happens again once after each update.
 
 ## First use
 1. Choose a model provider and enter your own API key. TabPilot tests the key, lists the models you can use and recommends one. The key is encrypted with the macOS keychain and stays on your Mac.

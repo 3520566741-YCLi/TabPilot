@@ -14,11 +14,7 @@
 
 </div>
 
-<p align="center">
-  <img src="docs/images/onboarding-en.png" width="32%" alt="First run: choose a model provider">
-  <img src="docs/images/chat-light-en.png" width="32%" alt="Teach-me mode chat">
-  <img src="docs/images/chat-dark-en.png" width="32%" alt="Dark theme">
-</p>
+![First run: choose a model provider](docs/images/hero-en.png)
 
 ## What it is
 
@@ -26,7 +22,7 @@ TabPilot is a desktop app that helps students get started with Tableau quickly. 
 
 The left side of the window is a chat; the right side is the unmodified Tableau Public web app. Tell TabPilot what you want on the left and it builds it on the right with real mouse and keyboard input. Two ways to use it:
 
-- **Teach me**: turn on Teach-me mode and it explains each step as it goes, including how you would do it by hand. Good for learning.
+- **Teach me**: turn on Teach-me mode and it walks you through doing it yourself, one step at a time: it highlights where to click, explains why, and checks your work. Say "slower", "do this step for me" or "do the rest" any time.
 - **Hands-free**: just describe what you need and it builds the whole chart. Good for assignments, recreating examples, or a quick first look.
 
 ## Why we built it
@@ -48,11 +44,17 @@ TabPilot lowers that barrier by demonstrating each step live in your own Tableau
 | 🖱️ Real input | Drags fields with a real mouse, types expressions on shelves, changes mark types, adds color / size / label |
 | 📂 Data & export | Creates Web Authoring workbooks, uploads local Excel / CSV, exports PNG / PDF / Excel / PowerPoint |
 | 🔁 Recreate workbooks | Reads .twb / .twbx, lists how each chart is built, then recreates them one by one |
-| 🗂️ Projects | Several projects side by side, each with its own Tableau page |
+| 🗂️ Project home | Several projects side by side, each with its own Tableau page; favorite, archive, duplicate and rename from the home page |
+| 💾 Save & project folders | Save to your own Tableau Public in one click (hidden from your profile) and pick up where you left off; each project gets a local folder with data copies, chart steps and exports |
 | 🎙️ Input | On-device voice input, screenshots and images, data file analysis |
-| ↩️ In control | Every step is shown in the chat and can be undone; it always asks before publishing or saving to Tableau Public |
+| ↩️ In control | Every step is shown in the chat and can be undone; steer or stop while it runs; it always asks before publishing publicly |
 | 🌗 Interface | Chinese / English UI, light / dark theme |
 
+
+<p align="center">
+  <img src="docs/images/chat-light-en.png" width="40%" alt="Teach-me mode chat">
+  <img src="docs/images/chat-dark-en.png" width="40%" alt="Dark theme">
+</p>
 
 ## Download
 
@@ -79,8 +81,9 @@ On first launch: pick a model provider and paste your own key (TabPilot tests it
 - **No server of our own**: TabPilot collects no usage data and has no analytics or telemetry. Network traffic goes only to Tableau Public and the model provider you choose.
 - **What goes to your provider**: to understand and operate the page, TabPilot sends your request, screenshots and text of the Tableau page, and summaries of data files you point it to. Check your provider's privacy policy before sending sensitive data.
 - **Keys stay on your computer**: encrypted with the macOS Keychain or your Windows account, never uploaded.
+- **Local files**: only files you point to or drop in are read; project folders live where you choose (Documents/TabPilot by default).
 - **Your Tableau account**: you sign in yourself on the right; TabPilot never fills in your password.
-- **Public content needs your OK**: publishing or saving to Tableau Public makes content public, so TabPilot asks every time and only proceeds if you agree.
+- **Public content needs your OK**: anything published to Tableau Public is public, so TabPilot asks every time. The Save button is the one exception: the first time you use it, TabPilot explains that saving publishes to your own Tableau Public, hidden from your profile but visible to anyone with the link. Once you agree, later saves overwrite the same workbook without asking again.
 - **Voice stays local**: speech is recognized by the operating system on your device; recordings are not uploaded.
 - **Optional third-party services**: OpenAI speech-to-text and TypeSafe step verification are used only if you add those keys in Settings.
 

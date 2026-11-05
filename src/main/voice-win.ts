@@ -49,3 +49,26 @@ export function stopVoiceWin(): void {
     proc.kill();
   }
 }
+
+// 当前界面语言对应的 Windows 语音识别器是否已安装（供权限页的“语音识别”项使用）。
+// 已安装 granted；没装 denied（引导去“语言和区域”安装语音包）；查询失败 unknown（按可用处理）
+export function winSpeechStatus(): Promise<"granted" | "denied" | "unknown"> {
+  const want = lang() === "en" ? "en" : "zh";
+  return new Promise((resolve) => {
+    let out = "";
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", "Add-Type -AssemblyName System.Speech; [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers() | ForEach-Object { $_.Culture.Name }"],
+      { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
+    );
+    const t = setTimeout(() => child.kill(), 10000);
+    child.stdout!.on("data", (d) => (out += d));
+    child.on("error", () => resolve("unknown"));
+    child.on("exit", (code) => {
+      clearTimeout(t);
+      if (code !== 0) return resolve("unknown");
+      const names = out.split(/\r?\n/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+      resolve(names.some((n) => n.startsWith(want)) ? "granted" : "denied");
+    });
+  });
+}

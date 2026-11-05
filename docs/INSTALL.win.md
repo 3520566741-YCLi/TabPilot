@@ -3,7 +3,7 @@
 ## 1. 选安装包
 - 大多数电脑选 `TabPilot-<版本>-windows-x64.exe`。
 - 骁龙（Snapdragon）笔记本选 `TabPilot-<版本>-windows-arm64.exe`。
-- 怎么判断：打开“设置 > 系统 > 系统信息”，看“处理器”一行。写着“骁龙”或 “Snapdragon” 的，选“骁龙笔记本专用”；其余（英特尔 Intel、AMD 等）都选“大多数电脑选这个”。
+- 怎么判断：打开“设置 > 系统 > 系统信息”，看“处理器”一行。写着“骁龙”或 “Snapdragon” 的，选 windows-arm64；其余（英特尔 Intel、AMD 等）都选 windows-x64。
 
 ## 2. 安装（会有“Windows 已保护你的电脑”提示，正常）
 安装包没有购买商业签名证书，所以 SmartScreen 会拦一下：
@@ -13,7 +13,7 @@
 如果杀毒软件拦截，请选择“信任/允许”；安装包只从本仓库的 Releases 页面下载，安装时不会联网下载其他东西。
 
 ## 3. 第一次使用
-1. 打开后按引导选模型服务商，粘贴你自己的 API Key（Key 用 Windows 账户加密保存在本机，数据目录是 `%APPDATA%\Tableau AI`，不会上传）。
+1. 打开后按引导选模型服务商，粘贴你自己的 API Key（Key 用 Windows 账户加密保存在本机，数据目录是 `%APPDATA%\TabPilot`，不会上传）。
 2. 右侧是 Tableau Public 网页，先登录你的账号。
 3. 左侧用中文说需求即可，例如“新建 Web 制作工作簿并上传桌面上的‘销售数据.xlsx’”。界面和 TabPilot 的回复想换成英文，在“设置 → 语言”里切换。
 4. 导出的文件在 `下载\TabPilot` 文件夹。发布/保存到 Tableau Public 会公开内容，TabPilot 每次都会先问你。

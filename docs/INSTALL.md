@@ -3,7 +3,7 @@
 ## 下载哪个
 - M 芯片的 Mac（M1/M2/M3/M4…）：`TabPilot-<版本>-mac-apple-silicon.dmg`
 - 英特尔芯片的 Mac：`TabPilot-<版本>-mac-intel.dmg`
-- 不确定是哪种：点左上角苹果图标，选“关于本机”，看“芯片”那一行：写 Apple M… 就选 M 芯片版，写 Intel 就选英特尔芯片版。
+- 不确定是哪种：点左上角苹果图标，选“关于本机”，看“芯片”那一行：写 Apple M… 就选 mac-apple-silicon，写 Intel 就选 mac-intel。
 
 
 ## 安装

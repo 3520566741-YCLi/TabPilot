@@ -1,17 +1,17 @@
 {
   "name": "tableau-ai",
   "productName": "TabPilot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "用中文操作 Tableau Public 网页版的桌面助手",
   "license": "MIT",
   "main": "dist/main/main.js",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json && rm -rf dist/renderer && mkdir -p dist/renderer && cp -R renderer/. dist/renderer/",
+    "build": "rm -rf dist && tsc -p tsconfig.json && mkdir -p dist/renderer && cp -R renderer/. dist/renderer/",
     "start": "npm run build && electron .",
-    "dist": "npm run build && electron-builder --mac --arm64 --x64",
+    "dist": "npm run build && electron-builder --mac --arm64 --x64 && node build/rename-artifacts.js",
     "build:native": "./native/build.sh",
-    "dist:win": "npm run build && electron-builder --win --x64 --arm64"
+    "dist:win": "npm run build && electron-builder --win --x64 --arm64 && node build/rename-artifacts.js"
   },
   "build": {
     "appId": "local.tabpilot",

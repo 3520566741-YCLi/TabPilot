@@ -11,11 +11,29 @@
     <div class="nav">
       <button class="icon" id="navBack" title="右侧页面后退" aria-label="后退"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5l-5 5 5 5"/></svg></button>
       <button class="icon" id="navReload" title="刷新右侧页面" aria-label="刷新"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9"/><path d="M14.5 3v3.5H11"/></svg></button>
-      <button class="icon" id="navHome" title="Tableau Public 首页" aria-label="首页"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3.5 9.5L10 4l6.5 5.5"/><path d="M5.5 8.5V16h9V8.5"/></svg></button>
+      <button class="icon" id="navHome" title="项目主页" aria-label="项目主页"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3.5 9.5L10 4l6.5 5.5"/><path d="M5.5 8.5V16h9V8.5"/></svg></button>
     </div>
     <div class="tabs" id="tabs" role="tablist" aria-label="项目"></div>
     <div id="url"></div>
   </div>
+  <section id="home" class="home hidden" aria-label="项目主页">
+    <aside class="hside" id="hside">
+      <div class="hbrand"><svg class="mark" viewBox="0 0 18 18" aria-hidden="true"><rect x="1" y="2" width="16" height="4" rx="2" fill="#4e79a7"/><rect x="1" y="7" width="11" height="4" rx="2" fill="#59a14f"/><rect x="1" y="12" width="7" height="4" rx="2" fill="#f28e2b"/></svg><b>TabPilot</b></div>
+      <nav class="hnav" id="hnav"></nav>
+      <div class="hfoot"><button class="hn" id="hnSettings" type="button"></button><div class="hsave"><i></i><span>已自动保存到本机</span></div></div>
+      <div class="hresize" id="hresize" role="separator" aria-orientation="vertical" aria-label="拖动调整侧栏宽度" tabindex="0"></div>
+    </aside>
+    <div class="hcol">
+      <div class="htb">
+        <label class="hsearch"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4"/></svg><input id="hq" type="search" placeholder="搜索项目" autocomplete="off" /></label>
+        <span class="grow"></span>
+        <select class="hsort" id="hsort" aria-label="排序"><option value="edited">最近编辑</option><option value="name">名称</option><option value="created">创建时间</option></select>
+        <div class="seg hview" id="hview"><button data-v="list" type="button" aria-label="列表"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h12M4 10h12M4 14h12"/></svg></button><button data-v="cards" type="button" aria-label="卡片"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="3.5" width="5.5" height="5.5" rx="1.5"/><rect x="11" y="3.5" width="5.5" height="5.5" rx="1.5"/><rect x="3.5" y="11" width="5.5" height="5.5" rx="1.5"/><rect x="11" y="11" width="5.5" height="5.5" rx="1.5"/></svg></button></div>
+        <button class="btn primary" id="hNew" type="button">新建项目</button>
+      </div>
+      <div class="hmain" id="hmain"></div>
+    </div>
+  </section>
   <div id="left">
     <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
     <header>
@@ -25,8 +43,11 @@
         <span id="modelTag" class="model"></span>
       </div>
       <div class="icons">
-        <button class="icon" id="btnTwb" title="按 .twb/.twbx 样例复刻" aria-label="按工作簿复刻">
+        <button class="icon" id="btnTwb" title="按 .twb/.twbx 工作簿复刻" aria-label="按工作簿复刻">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="10" height="12" rx="1.5"/><path d="M7 17h8.5a1.5 1.5 0 0 0 1.5-1.5V7"/><path d="M6 7h4M6 10h4"/></svg>
+        </button>
+        <button class="icon" id="btnSave" title="保存" aria-label="保存">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h9l3 3v9H4z"/><path d="M7 4v4h5V4M7 16v-5h6v5"/></svg><i class="udot" hidden></i>
         </button>
         <button class="icon" id="btnExport" title="导出制作步骤（Markdown）" aria-label="导出制作步骤">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3v9M6.5 8.5L10 12l3.5-3.5"/><path d="M4 13.5V16h12v-2.5"/></svg>
@@ -50,10 +71,9 @@
         </div>
         <div class="starter">
           <div class="starter-title">不妨从这里开始</div>
-          <button class="chip">新建一个工作簿，导入桌面上的销售数据</button>
-          <button class="chip">绘制条形图：按客户类型（Segment）统计订单数</button>
-          <button class="chip">以拖拽的方式，将品类（Category）置于行、销售额（Sales）置于列</button>
-          <button class="chip">绘制热力图：客户类型（Segment）对品类（Category），以利润 SUM(Profit) 着色，方形标记</button>
+          <button class="chip">新建一个工作簿，我来上传自己的 Excel / CSV 数据</button>
+          <button class="chip">用我的数据，你能做哪些图？</button>
+          <button class="chip">教我做一张按类别对比的条形图</button>
         </div>
       </section>
     </main>
@@ -64,13 +84,14 @@
         <button class="btn quiet" id="coachNext" type="button">下一条</button>
         <button class="icon" id="coachX" type="button" aria-label="不再提示" data-tip-x="1"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
       </div>
-      <div class="composer">
+      <div id="sendq" class="sendq hidden" aria-live="polite"></div>
+    <div class="composer">
         <div id="toasts" aria-live="polite"></div>
         <div id="attachments" class="attach-row hidden"></div>
         <textarea id="input" rows="2" placeholder="说说你想看的图 · 回车发送，Shift+回车换行"></textarea>
         <div class="bar">
           <button class="icon" id="btnAttach" title="添加图片或数据文件（也可以直接拖进来、粘贴截图）" aria-label="添加附件"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15.5 9.5l-5.8 5.8a3.6 3.6 0 0 1-5.1-5.1l6.2-6.2a2.4 2.4 0 0 1 3.4 3.4l-6.2 6.2a1.2 1.2 0 0 1-1.7-1.7l5.6-5.6"/></svg></button>
-          <button class="icon" id="btnShot" title="截取右侧 Tableau 画面发给 AI" aria-label="截取 Tableau 画面"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h2l1.2-2h4.6l1.2 2h2A1.5 1.5 0 0 1 17 7.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"/><circle cx="10" cy="11" r="2.8"/></svg></button>
+          <button class="icon" id="btnShot" title="截取右侧 Tableau 画面发给 TabPilot" aria-label="截取 Tableau 画面"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h2l1.2-2h4.6l1.2 2h2A1.5 1.5 0 0 1 17 7.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"/><circle cx="10" cy="11" r="2.8"/></svg></button>
           <button class="icon" id="btnMic" title="语音输入" aria-label="语音输入"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7.5" y="2.5" width="5" height="9.5" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/></svg></button>
           <label class="toggle" title="开启后，TabPilot 会一边操作一边讲解，并在右侧标出位置">
             <input type="checkbox" id="tutorial" /><span class="track"><span class="knob"></span></span><span>教我做</span>
@@ -81,6 +102,12 @@
       </div>
     </footer>
 
+
+
+    <div id="lightbox" class="hidden"><button class="icon lb-x" id="lightboxX" type="button" aria-label="关闭"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 5l10 10M15 5L5 15"/></svg></button><img id="lightboxImg" alt="截图" /></div>
+    <div id="divider" title="拖动调整宽度"></div>
+  </div>
+  <!-- 设置与首次引导是整窗页面，盖在主页和聊天之上，不受左栏影响 -->
     <section id="settings" class="sheet hidden" aria-label="设置">
       <header>
         <h2>设置</h2>
@@ -115,6 +142,10 @@
         <div class="group">
           <h3>进阶 <button class="info" type="button" data-help="“主动给出改进建议”：做完图后 TabPilot 会告诉你还能怎么改。“快速模型复核”是进阶选项，不确定就保持关闭。" aria-label="这是什么">i</button></h3>
           <div class="row-switch">
+            <div><div class="t">运行中发送的消息直接作为引导</div><div class="d">关闭时，运行中发的消息会排队，等这一轮做完再发；排队的消息旁边可以随时点“作为引导发送”。</div></div>
+            <label class="toggle"><input type="checkbox" id="optSteer" /><span class="track"><span class="knob"></span></span></label>
+          </div>
+          <div class="row-switch">
             <div><div class="t">完成后给出优化建议</div><div class="d">图表完成后，为你指出还可以更好的地方。</div></div>
             <label class="toggle"><input type="checkbox" id="optSuggest" /><span class="track"><span class="knob"></span></span></label>
           </div>
@@ -123,6 +154,15 @@
             <label class="toggle"><input type="checkbox" id="optJev" /><span class="track"><span class="knob"></span></span></label>
           </div>
           <label class="field">Jev 密钥 <span class="badge" id="jevHas"></span><input class="text" id="jevKey" type="password" placeholder="粘贴后按回车保存" autocomplete="off" /></label>
+        </div>
+        <div class="group" id="docsGroup">
+          <h3>文档存放位置 <button class="info" type="button" data-help="每个项目在这里有自己的文件夹：数据文件的副本、导出的图片和工作簿、制作步骤。" aria-label="这是什么">i</button></h3>
+          <div class="docsrow"><span class="docspath" id="docsPath"></span><div class="acts"><button class="btn" id="docsChange" type="button">更改</button><button class="btn quiet" id="docsReveal" type="button">在访达中显示</button></div></div>
+        </div>
+        <div class="group" id="permGroup">
+          <h3>权限 <button class="info" type="button" data-help="TabPilot 需要这些权限才能读取你的数据文件、安全保存密钥，并在右侧替你操作。可选项不开启也能使用。" aria-label="这是什么">i</button></h3>
+          <div class="perms" id="permList"></div>
+          <div class="clearbox" id="revokeBox"><button class="btn quiet danger" id="btnRevoke" type="button">撤回同意…</button></div>
         </div>
         <div class="group">
           <h3>动画 <button class="info" type="button" data-help="如果动来动去让你眼花或不舒服，打开它就会停掉移动，只留淡入淡出。" aria-label="这是什么">i</button></h3>
@@ -141,14 +181,12 @@
     </section>
 
     <section id="onboard" class="sheet onboard hidden" aria-label="首次设置">
-      <div class="ob-top"><div class="dots" id="obDots"><i></i><i></i><i></i><i></i></div><button class="btn quiet" id="obSkip">稍后再说</button></div>
-      <div class="ob-body" id="obBody"></div>
-      <footer class="ob-foot"><button class="btn" id="obBack">上一步</button><span class="grow"></span><button class="btn primary" id="obNext">下一步</button></footer>
+      <div class="ob-card">
+        <div class="dots" id="obDots"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="ob-body" id="obBody"></div>
+        <footer class="ob-foot"><button class="btn" id="obBack" type="button">上一步</button><button class="btn quiet" id="obSkip" type="button">稍后再说</button><span class="grow"></span><button class="btn primary" id="obNext" type="button">下一步</button></footer>
+      </div>
     </section>
-
-    <div id="lightbox" class="hidden"><button class="icon lb-x" id="lightboxX" type="button" aria-label="关闭"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 5l10 10M15 5L5 15"/></svg></button><img id="lightboxImg" alt="截图" /></div>
-    <div id="divider" title="拖动调整宽度"></div>
-  </div>
   <div id="tip" role="tooltip"></div>
   <script src="i18n.js"></script>
   <script src="renderer.js"></script>

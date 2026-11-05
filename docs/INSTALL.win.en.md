@@ -1,10 +1,10 @@
 # Installing TabPilot on Windows
 
 ## Which file to download
-- Most PCs: `TabPilot-<version>-windows-x64.exe` ("the one most computers need")
-- Snapdragon laptops: `TabPilot-<version>-windows-arm64.exe` ("for Snapdragon laptops")
+- Most PCs: `TabPilot-<version>-windows-x64.exe`
+- Snapdragon laptops: `TabPilot-<version>-windows-arm64.exe`
 
-How to tell: open Settings → System → About and look at "Processor". If it says Snapdragon, pick the "骁龙笔记本专用" file; for anything else (Intel, AMD, …) pick the "大多数电脑选这个" file.
+How to tell: open Settings → System → About and look at "Processor". If it says Snapdragon, pick the windows-arm64 file; for anything else (Intel, AMD, …) pick the windows-x64 file.
 
 ## Install (Windows will show a warning; that's expected)
 The installer isn't signed with a paid certificate, so SmartScreen shows "Windows protected your PC":
@@ -14,7 +14,7 @@ The installer isn't signed with a paid certificate, so SmartScreen shows "Window
 If your antivirus blocks it, allow/trust the file. It is not malware.
 
 ## First use
-1. Choose a model provider and enter your own API key. TabPilot tests the key, lists the models you can use and recommends one. The key is encrypted with your Windows account and stays on your PC (data folder: `%APPDATA%\Tableau AI`).
+1. Choose a model provider and enter your own API key. TabPilot tests the key, lists the models you can use and recommends one. The key is encrypted with your Windows account and stays on your PC (data folder: `%APPDATA%\TabPilot`).
 2. The right side is Tableau Public. To save your work you need a Tableau Public account (sign in yourself on the right; TabPilot never types passwords for you). You can build charts without signing in.
 3. Type what you want on the left, for example "Create a new Web Authoring workbook and upload 'Sales data.xlsx' from my Desktop", then "What charts can you make with my data?".
 4. To switch the interface and TabPilot's replies between English and Chinese, open Settings → Language.

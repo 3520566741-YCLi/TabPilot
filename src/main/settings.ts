@@ -20,6 +20,11 @@ export interface Settings {
   ignoreOldCopies: boolean; // 不再提醒删除旧版本
   language: "system" | "zh" | "en"; // 界面语言偏好
   uiLang: "zh" | "en" | ""; // 实际生效的界面语言（渲染进程按系统语言算好后传来）
+  autoRunSafePlans: boolean; // 不含危险步骤的多步方案直接执行，不再确认
+  sendWhileRunning: "queue" | "steer"; // 任务进行中发消息：排队等这一轮结束，或作为引导立即并入
+  docsDir: string; // 文档存放位置（每个项目一个文件夹）；空 = 默认 文稿/TabPilot
+  docsDirChosen: boolean; // 用户在引导或设置里确认过存放位置
+  publishConsent: boolean; // 用户已看过并同意“保存 = 发布到 Tableau Public（不在主页显示，但有链接的人能看到）”
 }
 
 interface Stored extends Settings {
@@ -39,6 +44,11 @@ const DEFAULTS: Stored = {
   ignoreOldCopies: false,
   language: "system",
   uiLang: "",
+  autoRunSafePlans: true,
+  sendWhileRunning: "queue",
+  docsDir: "",
+  docsDirChosen: false,
+  publishConsent: false,
   keys: {},
 };
 
@@ -78,6 +88,11 @@ function normalize(raw: unknown): Stored {
     ignoreOldCopies: bool(r.ignoreOldCopies, false),
     language: oneOf(r.language, ["system", "zh", "en"] as const, "system"),
     uiLang: oneOf(r.uiLang, ["zh", "en", ""] as const, ""),
+    autoRunSafePlans: bool(r.autoRunSafePlans, true),
+    sendWhileRunning: oneOf(r.sendWhileRunning, ["queue", "steer"] as const, "queue"),
+    docsDir: str(r.docsDir, "", 500),
+    docsDirChosen: bool(r.docsDirChosen, false),
+    publishConsent: bool(r.publishConsent, false),
     keys,
   };
 }
@@ -118,17 +133,26 @@ export function getSettings(): Settings & { hasKey: Record<KeyId, boolean> } {
     ignoreOldCopies: s.ignoreOldCopies,
     language: s.language,
     uiLang: s.uiLang,
+    autoRunSafePlans: s.autoRunSafePlans,
+    sendWhileRunning: s.sendWhileRunning,
+    docsDir: s.docsDir,
+    docsDirChosen: s.docsDirChosen,
+    publishConsent: s.publishConsent,
     hasKey,
   };
 }
 
-const ALLOWED: (keyof Settings)[] = ["provider", "claudeModel", "deepseekModel", "splitLeft", "theme", "suggestions", "jevVerify", "models", "voiceEngine", "ignoreOldCopies", "language", "uiLang"];
+const ALLOWED: (keyof Settings)[] = ["provider", "claudeModel", "deepseekModel", "splitLeft", "theme", "suggestions", "jevVerify", "models", "voiceEngine", "ignoreOldCopies", "language", "uiLang", "autoRunSafePlans", "sendWhileRunning"];
+// docsDir / docsDirChosen 只能通过 docs:choose / permissions.request("docs") 改（会校验路径）
+const INTERNAL: (keyof Settings)[] = ["docsDir", "docsDirChosen", "publishConsent"];
 
-export function updateSettings(patch: Partial<Settings>) {
+// internal=true 只给主进程自己用（docs:choose 校验过的路径、用户在保存说明卡里点了同意）；
+// 渲染进程经 settings:update 传来的改动只放行 ALLOWED 里的键
+export function updateSettings(patch: Partial<Settings>, internal = false) {
   const s = load();
   if (!patch || typeof patch !== "object") return;
   const merged: Record<string, unknown> = { ...s };
-  for (const k of ALLOWED) if (k in patch) merged[k] = (patch as Record<string, unknown>)[k];
+  for (const k of internal ? [...ALLOWED, ...INTERNAL] : ALLOWED) if (k in patch) merged[k] = (patch as Record<string, unknown>)[k];
   // models 是合并而不是替换；旧的 claudeModel / deepseekModel 字段同步写进 models
   const pm = (patch as Record<string, unknown>).models;
   merged.models = { ...s.models, ...(pm && typeof pm === "object" ? pm : {}) };

@@ -12,6 +12,31 @@ func emit(_ type: String, _ text: String = "") {
     }
 }
 
+// 权限检查模式：--auth-status 只查询，--request-auth 弹系统询问；输出 {"auth":"authorized|denied|restricted|notDetermined"}
+func authName(_ s: SFSpeechRecognizerAuthorizationStatus) -> String {
+    switch s {
+    case .authorized: return "authorized"
+    case .denied: return "denied"
+    case .restricted: return "restricted"
+    default: return "notDetermined"
+    }
+}
+func printAuth(_ s: SFSpeechRecognizerAuthorizationStatus) {
+    print("{\"auth\":\"\(authName(s))\"}")
+    fflush(stdout)
+}
+if CommandLine.arguments.contains("--auth-status") {
+    printAuth(SFSpeechRecognizer.authorizationStatus())
+    exit(0)
+}
+if CommandLine.arguments.contains("--request-auth") {
+    SFSpeechRecognizer.requestAuthorization { status in
+        printAuth(status)
+        exit(0)
+    }
+    dispatchMain()
+}
+
 // 识别语言由第一个参数指定（zh-CN / en-US），默认中文
 let localeId = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "zh-CN"
 let recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeId))

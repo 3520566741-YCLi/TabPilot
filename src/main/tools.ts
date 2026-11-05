@@ -232,6 +232,53 @@ export const TOOL_DEFS: ToolDef[] = [
     input_schema: obj({ query: { type: "string" } }, ["query"]),
   },
   {
+    name: "guide_step",
+    description:
+      "教我做模式专用：引导用户自己做一步。在右侧高亮要点的位置（target 写界面上的文字，例如“列”“Region”“标记”；或给截图坐标 x/y；也可以用 element_id），在聊天里显示这一步：instruction 一句话说怎么做（在哪里、点什么/拖到哪里），why 一句话讲为什么这样做。step/total 是第几步/共几步。调用后这一轮就结束，等用户自己动手；用户会回复“做好了”“这步帮我做”“慢一点”或提问。",
+    input_schema: obj(
+      {
+        instruction: { type: "string" },
+        why: { type: "string" },
+        target: { type: "string" },
+        element_id: { type: "integer" },
+        x: { type: "number" },
+        y: { type: "number" },
+        step: { type: "integer" },
+        total: { type: "integer" },
+      },
+      ["instruction", "why"],
+    ),
+  },
+  {
+    name: "save_workbook",
+    description:
+      "保存流程专用（只在用户点了“保存”的那一轮用）：按固定步骤把当前工作簿发布到用户自己的 Tableau Public 账号（第一次用“发布为”并填项目名，之后点“发布”覆盖同一个），再到账号的作品列表里找到它、记下地址。返回里会说明是否已经不在个人主页显示。不要自己去点发布按钮，用这个工具。",
+    input_schema: obj({}),
+  },
+  {
+    name: "check_saved",
+    description: "保存流程专用：重新查一下这个项目的工作簿在账号里的状态（是否已隐藏），并更新记录。隐藏操作完成后调用。",
+    input_schema: obj({}),
+  },
+
+  {
+    name: "offer_choices",
+    description:
+      "在聊天里给用户一张选项卡片（可单选或多选，底部有“确定”），用户选好后会作为下一条消息发回给你。用于：用户问“能做什么图/有什么办法”这类问题时，列出可选项让用户挑，挑完再动手。title 一句话问题；detail 可选，一两句说明依据（例如数据里有哪些字段）；options 2~8 项，每项 label 不超过 20 字、hint 不超过 40 字（说明这张图回答什么问题）；multi=true 允许多选。调用后不要自己开始做，等用户选。",
+    input_schema: obj(
+      {
+        title: { type: "string" },
+        detail: { type: "string" },
+        options: {
+          type: "array",
+          items: { type: "object", properties: { label: { type: "string" }, hint: { type: "string" } }, required: ["label"], additionalProperties: false },
+        },
+        multi: { type: "boolean" },
+      },
+      ["title", "options"],
+    ),
+  },
+  {
     name: "suggest_improvement",
     description:
       "给用户改进建议卡：每条建议是一个可点选的按钮（可多选），用户点了就直接执行，不用再确认。title 写一句总标题；detail 写对比了哪些参考样例（附链接）和总体判断；actions 写 2~5 条具体可执行的改进（每条不超过 30 字，例如“按 Segment 着色，三根柱子颜色区分”“按订单数降序排列”），用户选中的会作为下一条消息发回。",
@@ -259,13 +306,30 @@ export const TOOL_DEFS: ToolDef[] = [
 
 const DANGEROUS = /(发布|publish|保存|save|另存为|make.*public|公开|删除工作簿|delete workbook)/i;
 
+// 可以按顺序重放、重建工作簿的操作
+// 保存那一轮允许的操作（隐藏作品时要在作品页点设置开关）
+const SAVE_TURN_TOOLS = new Set(["save_workbook", "check_saved", "screenshot", "tableau_state", "read_page", "click", "open_url", "wait", "key", "ask_user"]);
+// 会改动右侧页面的操作：教我做时由用户自己完成
+const HANDS_ON = new Set(["click", "drag", "type_text", "key", "scroll", "open_url", "open_web_authoring", "add_to_shelf", "remove_from_shelf", "set_mark_type", "new_worksheet", "switch_sheet", "rename_sheet", "upload_file", "export_view"]);
+export const RECIPE_TOOLS = new Set(["open_web_authoring", "upload_file", "add_to_shelf", "remove_from_shelf", "set_mark_type", "new_worksheet", "rename_sheet", "switch_sheet"]);
+
 const MUTATING = new Set(["add_to_shelf", "remove_from_shelf", "set_mark_type", "new_worksheet", "rename_sheet", "click", "drag", "key", "type_text"]);
 
 export class ToolHost {
   ops!: TableauOps;
   tutorial = false; // 教程模式：高亮停留更久，便于用户看清
+  // 教我做：用户自己动手，助手只引导。这一轮里助手不能替用户操作页面（用户说“这步帮我做/直接做”时为 false）
+  teachHandsOff = false;
+  onDataUploaded: ((file: string) => void) | null = null; // 上传成功后把数据文件复制一份到项目文件夹
+  // 用户点了“保存”并同意过发布说明：这一轮里点“发布/保存”不再弹确认（删除类操作仍要确认）
+  saveApproved = false;
+  saveTarget: { name: string; overwrite: boolean } | null = null;
+  onSaved: ((r: { profile: string; repo: string; view: string; hidden: boolean }) => void) | null = null;
   suggestions = true;
   stopped = false; // 用户点了“停止”
+  autoRunSafePlans = true; // 没有危险步骤的方案直接执行
+  // 每成功执行一步可重建的建图操作就回调一次（用于记录项目的建图步骤）
+  onStep: ((name: string, input: unknown) => void) | null = null;
   jevKey: string | null = null;
   // 可撤销的改动记录（按时间顺序），只允许从最新的往回撤
   private changes: { id: string; text: string; undone: boolean }[] = [];
@@ -327,7 +391,10 @@ export class ToolHost {
   async guardDangerous(x: number, y: number): Promise<string | null> {
     const desc = await this.browser.describeAt(x, y);
     const firstLine = desc.split(" / ")[0] ?? desc;
-    if (DANGEROUS.test(firstLine)) {
+    // 点到的是整块菜单/面板（文字有很多行）时不是在点某个按钮，不拦截；真正的“发布”按钮只有一两行字
+    const lines = firstLine.split("\n").map((t) => t.trim()).filter(Boolean);
+    if (lines.length <= 3 && DANGEROUS.test(firstLine)) {
+      if (this.saveApproved && /(发布|保存|Publish|Save)/i.test(firstLine) && !/(删除|Delete|Remove)/i.test(firstLine)) return null;
       const ok = L("确认公开发布", "Publish publicly");
       const ans = await this.deps.askUser(
         L(
@@ -343,7 +410,18 @@ export class ToolHost {
   }
 
   async execute(name: string, input: any, opts: { debugDir?: string } = {}): Promise<ToolResult> {
+    // 保存这一轮只做保存：不切项目、不新建、不乱跳页面
+    if (this.saveApproved && !SAVE_TURN_TOOLS.has(name)) {
+      return { text: "现在是保存流程，只能用 save_workbook / check_saved 和隐藏作品所需的操作。遇到问题直接告诉用户原因并结束。", isError: true };
+    }
+    if (this.teachHandsOff && HANDS_ON.has(name)) {
+      return {
+        text: "现在是“教我做”：要让用户自己动手。请用 guide_step 高亮位置、说明这一步怎么做和为什么，然后结束这一轮等用户做。用户说“这步帮我做”或“直接做”时才可以自己操作。",
+        isError: true,
+      };
+    }
     const r = await this.run(name, input, opts);
+    if (!r.isError && RECIPE_TOOLS.has(name) && !/^(⚠️|没有|找不到|当前不在|不认识|打开了下拉框|没能)/.test(r.text)) this.onStep?.(name, input);
     if (!r.isError && MUTATING.has(name) && !/^(⚠️|没有|找不到|当前不在|不认识|打开了下拉框)/.test(r.text)) {
       const summary = this.summarize(name, input);
       if (summary) this.recordChange(summary, true);
@@ -386,7 +464,8 @@ export class ToolHost {
         return { text: `截图 ${shot.width}x${shot.height}`, image: { data: shot.data, mediaType: "image/jpeg" } };
       }
       case "read_page": {
-        if (b.scale() === 1) await b.screenshot().catch(() => {}); // 确保缩放比例已初始化
+        // 确保缩放比例已初始化；页面隐藏时截图会一直等，最多等 3 秒
+        if (b.scale() === 1) await Promise.race([b.screenshot().catch(() => {}), sleep(3000)]);
         const list = await b.readElements(input.query);
         return { text: this.fmtElements(list) };
       }
@@ -518,7 +597,9 @@ export class ToolHost {
         const c = checkDataPath(String(input.path));
         if (!c.ok) return { text: c.error, isError: true };
         const p = c.path;
-        return { text: await this.ops.uploadFile(p, (q) => this.deps.askUser(q, [L("已完成", "Done"), L("没有成功", "It didn't work")]), input.table) };
+        const text = await this.ops.uploadFile(p, (q) => this.deps.askUser(q, [L("已完成", "Done"), L("没有成功", "It didn't work")]), input.table);
+        if (!/^(⚠️|没有|找不到|没能)/.test(text)) this.onDataUploaded?.(p);
+        return { text };
       }
       case "export_view":
         return { text: await this.ops.exportView(String(input.format)) };
@@ -581,9 +662,82 @@ export class ToolHost {
           .slice(0, 30)
           .map((st: any) => (typeof st === "string" ? { text: st } : { text: String(st?.text ?? ""), danger: !!st?.danger }));
         const danger = steps.some((st: { danger?: boolean }) => st.danger);
+        if (!danger && this.autoRunSafePlans) {
+          // 没有危险步骤：直接执行，只在左侧展示方案
+          this.deps.emit({ type: "plan", id: Math.random().toString(36).slice(2, 10), title: String(input.title), steps });
+          return { text: "方案没有危险步骤，已按设置直接开始执行。请按方案逐步完成，不用再确认。" };
+        }
         const okLabel = danger ? L("确认执行", "Confirm and run") : L("开始", "Start");
         const ans = await this.deps.confirm(String(input.title), steps, danger, okLabel, L("取消", "Cancel"));
         return { text: ans === okLabel ? "用户同意，开始执行。" : `用户没有同意（${ans}），不要执行这个计划，问问用户想怎么调整。` };
+      }
+      case "guide_step": {
+        let ok = false;
+        const instruction = String(input.instruction ?? "").slice(0, 200);
+        const why = String(input.why ?? "").slice(0, 200);
+        try {
+          if (typeof input.element_id === "number" || (typeof input.x === "number" && typeof input.y === "number")) {
+            const p = await this.resolvePoint(input, "element_id", null);
+            await b.highlight([p], instruction, true);
+            ok = true;
+          } else if (input.target) ok = await b.pointAt(String(input.target), instruction);
+        } catch {
+          ok = false;
+        }
+        this.deps.emit({
+          type: "guide",
+          id: Math.random().toString(36).slice(2, 10),
+          step: typeof input.step === "number" ? input.step : undefined,
+          total: typeof input.total === "number" ? input.total : undefined,
+          instruction,
+          why,
+          highlighted: ok,
+        });
+        return {
+          text:
+            (ok ? "已在右侧高亮位置，" : "没找到要高亮的位置（可以先 read_page 拿 element_id 或用截图坐标），") +
+            "这一步已显示给用户。现在结束这一轮，不要继续操作，等用户回复。用户说“做好了”时先用 tableau_state 检查：对了就夸一句并给下一步；不对就具体说哪里不对、怎么改。",
+        };
+      }
+      case "save_workbook":
+      case "check_saved": {
+        if (!this.saveApproved || !this.saveTarget) return { text: "只有用户点了“保存”时才能用。", isError: true };
+        const t = this.saveTarget;
+        if (name === "save_workbook") {
+          const r = await this.ops.publish(t.name, t.overwrite);
+          if (!r.ok) return { text: r.text, isError: true };
+        }
+        const profile = await this.ops.currentProfile();
+        if (!profile) return { text: "已发布，但没能确认当前登录的账号，请让用户看一下右上角是否已登录。", isError: true };
+        const hit = await this.ops.findWorkbook(profile, t.name);
+        if (!hit) return { text: `在账号 ${profile} 的作品里没找到「${t.name}」。可能还在处理中，等 10 秒再调用 check_saved。`, isError: true };
+        this.onSaved?.({ profile, ...hit });
+        t.overwrite = true;
+        const sheet = hit.view.split("/").pop();
+        const page = `https://public.tableau.com/app/profile/${profile}/viz/${hit.repo}/${sheet}`;
+        return {
+          text: hit.hidden
+            ? `已保存，并且不在个人主页显示。作品地址：${page}。下次打开这个项目会直接打开它继续编辑。现在用一两句话告诉用户结果，然后结束。`
+            : `已保存，但现在还显示在个人主页上。请打开 ${page}，点作品右上角的设置，把“在个人资料上显示”关掉，然后用 open_url 回到 https://public.tableau.com/authoring/${hit.repo}/${sheet} ，再调用 check_saved 确认。`,
+        };
+      }
+      case "offer_choices": {
+        const opts = (Array.isArray(input.options) ? input.options : [])
+          .map((o: unknown) => (o && typeof o === "object" ? (o as { label?: unknown; hint?: unknown }) : { label: o }))
+          .filter((o: { label?: unknown }) => typeof o.label === "string" && o.label.trim())
+          .slice(0, 8);
+        if (opts.length < 2) return { text: "至少要给 2 个选项。", isError: true };
+        // 用界面已有的建议卡片的“选择”形态（pick），先选再做
+        this.deps.emit({
+          type: "suggest",
+          id: Math.random().toString(36).slice(2, 10),
+          title: String(input.title ?? "").slice(0, 80),
+          detail: input.detail ? String(input.detail).slice(0, 300) : "",
+          actions: opts.map((o: { label?: unknown; hint?: unknown }, i: number) => ({ id: String(i), label: String(o.label).slice(0, 30) + (o.hint ? `：${String(o.hint).slice(0, 60)}` : "") })),
+          multi: input.multi === true,
+          pick: true,
+        });
+        return { text: "选项卡片已显示。现在不要动手，用一句话请用户挑选后结束这一轮；用户选好后下一条消息会写明选了哪些，收到后再按选择去做。" };
       }
       case "suggest_improvement": {
         if (!this.suggestions) return { text: "用户关闭了主动建议，不要再提建议。" };
@@ -649,7 +803,7 @@ function checkDataPath(raw: string): { ok: true; path: string } | { ok: false; e
   const rel = path.relative(home, p);
   if (rel.startsWith("..") || path.isAbsolute(rel)) return { ok: false, error: "只能使用你主目录里的文件。" };
   if (rel.split(path.sep).some((seg) => seg.startsWith(".")) || rel.startsWith("Library" + path.sep)) {
-    return { ok: false, error: "这个位置的文件不允许 AI 读取。" };
+    return { ok: false, error: "这个位置的文件不允许读取。" };
   }
   if (!DATA_EXT.test(p)) return { ok: false, error: "只能使用数据文件（Excel、CSV、JSON、Tableau 工作簿等）。如果确实需要，请把文件拖进聊天框。" };
   if (!fs.statSync(p).isFile()) return { ok: false, error: "这不是一个文件。" };

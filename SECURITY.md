@@ -6,7 +6,8 @@
 
 | 版本 Version | 支持 Supported |
 |---|---|
-| 0.1.x | ✅ |
+| 0.2.x | ✅ |
+| 0.1.x | ❌ |
 
 ## 报告漏洞 / Reporting a vulnerability
 
@@ -26,8 +27,8 @@ Please do not report security issues in public issues. Use GitHub's [private vul
   Provider keys are encrypted with the OS (macOS Keychain / Windows account) and stored only locally.
 - 软件只向 Tableau Public 和用户选择的模型服务商发送请求，没有遥测。
   The app only talks to Tableau Public and the provider the user chooses; there is no telemetry.
-- 发布或保存到 Tableau Public 等公开操作，每次都需要用户确认；软件不代填 Tableau 密码。
-  Public actions such as publishing to Tableau Public always require user confirmation; the app never fills in Tableau passwords.
+- 发布到 Tableau Public 等公开操作需要用户确认；“保存”在用户第一次同意后，之后只覆盖同一个作品。软件不代填 Tableau 密码。
+  Public actions such as publishing to Tableau Public require user confirmation; after the user agrees once, Save only overwrites the same workbook. The app never fills in Tableau passwords.
 - 调试接口默认关闭，只有设置环境变量 `TABLEAU_AI_DEBUG_PORT` 时才会在 127.0.0.1 上开启，请不要在日常使用时开启。
   The debug endpoint is off by default and only listens on 127.0.0.1 when `TABLEAU_AI_DEBUG_PORT` is set; do not enable it for everyday use.
 
