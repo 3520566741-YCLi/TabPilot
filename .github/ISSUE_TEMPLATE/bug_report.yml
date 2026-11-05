@@ -1,0 +1,52 @@
+name: 问题反馈 / Bug report
+description: 软件出错或结果不对 / Something is broken or wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！截图前请遮住密钥、账号和不想公开的数据。安全问题请不要在这里提交，见 SECURITY.md。
+        Thanks! Hide keys, account details and private data in screenshots. Report security issues via SECURITY.md instead.
+  - type: input
+    id: version
+    attributes:
+      label: TabPilot 版本 / Version
+      description: 设置页底部可以看到 / Shown at the bottom of Settings
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: 系统 / OS
+      options:
+        - macOS（Apple 芯片 / Apple silicon）
+        - macOS（英特尔 / Intel）
+        - Windows（x64）
+        - Windows（骁龙 / Arm64）
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: 模型服务商和模型 / Provider and model
+      placeholder: DeepSeek / deepseek-chat
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么 / What happened
+      description: 你说了什么、它做了什么、你期望它做什么 / What you asked, what it did, what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 重现步骤 / Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图 / Screenshots

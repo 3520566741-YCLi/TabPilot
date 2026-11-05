@@ -1,0 +1,14 @@
+node_modules/
+dist/
+release/
+out/
+.npm-cache/
+native/build/
+.env
+.env.*
+*.key
+*.pem
+settings.json
+projects.json
+Partitions/
+.DS_Store

@@ -1,0 +1,106 @@
+{
+  "name": "tableau-ai",
+  "productName": "TabPilot",
+  "version": "0.1.0",
+  "description": "用中文操作 Tableau Public 网页版的桌面助手",
+  "license": "MIT",
+  "main": "dist/main/main.js",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json && rm -rf dist/renderer && mkdir -p dist/renderer && cp -R renderer/. dist/renderer/",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --mac --arm64 --x64",
+    "build:native": "./native/build.sh",
+    "dist:win": "npm run build && electron-builder --win --x64 --arm64"
+  },
+  "build": {
+    "appId": "local.tabpilot",
+    "productName": "TabPilot",
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "语音输入需要使用麦克风。",
+        "NSSpeechRecognitionUsageDescription": "把你的语音转成文字发给 AI。"
+      },
+      "icon": "build/icon.png",
+      "extraResources": [
+        {
+          "from": "native/build/voice-helper",
+          "to": "voice-helper"
+        }
+      ]
+    },
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "dmg": {
+      "title": "TabPilot",
+      "artifactName": "TabPilot-${version}-${arch}.dmg"
+    },
+    "asarUnpack": [],
+    "afterPack": "build/afterPack.js",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "extraResources": [
+        {
+          "from": "native/voice-win.ps1",
+          "to": "voice-win.ps1"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "TabPilot-Setup-${version}-${arch}.${ext}",
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
+    "adm-zip": "^0.6.1",
+    "exceljs": "^4.4.0",
+    "fast-xml-parser": "^5.12.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/node": "^26.6.6",
+    "electron": "^45.2.2",
+    "electron-builder": "^26.18.0",
+    "typescript": "^7.0.2"
+  },
+  "author": "TabPilot",
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}

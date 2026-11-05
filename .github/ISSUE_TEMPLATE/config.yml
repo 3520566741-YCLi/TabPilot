@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全问题 / Security vulnerability
+    url: https://github.com/3520566741-YCLi/TabPilot/security/advisories/new
+    about: 请私下报告，不要公开提 issue / Please report privately, not in a public issue
