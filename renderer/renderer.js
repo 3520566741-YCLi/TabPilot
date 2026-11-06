@@ -13,28 +13,6 @@ const stepNodes = new Map();
 let usage = { model: "", input: 0, output: 0, cacheRead: 0 };
 const fmt = (n) => n.toLocaleString("zh-CN");
 
-const VERBS = {
-  screenshot: "截图查看",
-  read_page: "读取页面元素",
-  click: "点击",
-  drag: "拖拽",
-  type_text: "输入",
-  key: "按键",
-  scroll: "滚动",
-  wait: "等待",
-  open_url: "打开",
-  tableau_state: "检查工作表状态",
-  add_to_shelf: "放到",
-  remove_from_shelf: "从功能区移除",
-  set_mark_type: "标记类型改为",
-  new_worksheet: "新建工作表",
-  upload_file: "上传数据",
-  parse_workbook: "解析工作簿",
-  inspect_data_file: "分析数据文件",
-  ask_user: "询问你",
-};
-const INTERNAL_TOOLS = new Set(["screenshot", "read_page", "tableau_state", "wait", "scroll"]);
-const SHELF_NAMES = { columns: "列", rows: "行", filters: "筛选器", pages: "页面", color: "颜色", size: "大小", label: "标签", detail: "详细信息", tooltip: "工具提示", shape: "形状", path: "路径", angle: "角度" };
 
 const IS_WIN = /Windows/i.test(navigator.userAgent);
 const el = (tag, cls, text) => {
@@ -66,38 +44,7 @@ function add(node) {
   return node;
 }
 
-function pill(expr) {
-  const isMeasure = /^\s*(SUM|AVG|COUNTD?|CNTD?|MIN|MAX|MEDIAN|ATTR|STDEV|VAR|AGG)\s*\(/i.test(expr) || /^[\d.]+$/.test(expr);
-  return el("span", "pill " + (isMeasure ? "mea" : "dim"), expr);
-}
 const basename = (p) => String(p).split(/[\\/]/).pop();
-
-function stepDetail(name, inp) {
-  const d = el("span", "detail");
-  if (!inp || typeof inp !== "object") return d;
-  if (name === "add_to_shelf") {
-    d.append(el("span", "shelf-name", SHELF_NAMES[inp.shelf] || inp.shelf), pill(inp.expression));
-    if (inp.method === "drag") d.append(el("span", "shelf-name", "拖拽"));
-  } else if (name === "remove_from_shelf") {
-    d.append(el("span", "shelf-name", SHELF_NAMES[inp.shelf] || inp.shelf));
-    if (inp.pill) d.append(pill(inp.pill));
-  } else if (name === "click") {
-    d.textContent = (inp.element_id ? `元素 #${inp.element_id}` : `(${Math.round(inp.x)}, ${Math.round(inp.y)})`) + (inp.double ? "，双击" : "") + (inp.button === "right" ? "，右键" : "");
-  } else if (name === "drag") {
-    const f = inp.from_element_id ? `#${inp.from_element_id}` : inp.from ? `(${Math.round(inp.from.x)}, ${Math.round(inp.from.y)})` : "";
-    const t = inp.to_element_id ? `#${inp.to_element_id}` : inp.to ? `(${Math.round(inp.to.x)}, ${Math.round(inp.to.y)})` : "";
-    d.textContent = `${f} 到 ${t}`;
-  } else if (name === "upload_file" || name === "parse_workbook" || name === "inspect_data_file") d.textContent = basename(inp.path);
-  else if (name === "wait") d.textContent = `${inp.seconds} 秒`;
-  else if (name === "key") d.textContent = inp.combo;
-  else if (name === "type_text") d.textContent = `“${inp.text}”`;
-  else if (name === "set_mark_type") d.textContent = inp.mark_type;
-  else if (name === "read_page" && inp.query) d.textContent = `“${inp.query}”`;
-  else if (name === "open_url") d.textContent = inp.url;
-  else if (name === "new_worksheet" && inp.name) d.textContent = inp.name;
-  else if (name === "ask_user") d.textContent = "";
-  return d;
-}
 
 // ---------- 执行过程：一个紧凑的进度块 ----------
 // 顶行：现在在做什么（人话）+ 计时；下面：最近完成的 2–3 步（人话）；
@@ -398,7 +345,7 @@ function handleAgentEvent(ev) {
         liveRenderChips();
         liveText("正在想下一步…");
       }
-      s.querySelector(".dres").textContent = ev.text || "";
+      s.querySelector(".dres").textContent = (ev.userText ?? ev.text) || "";
       if (ev.isError) s.classList.add("open");
       if (ev.image) {
         const img = el("img");
@@ -689,7 +636,7 @@ function renderSuggest(ev) {
   };
   const sendPicked = (labels) => {
     finish();
-    send((pick ? "我选这几个来做：\n" : "按这几条改：\n") + labels.map((t, i) => `${i + 1}. ${t}`).join("\n"));
+    send((pick ? (en() ? "I'll go with these:\n" : "我选这几个来做：\n") : en() ? "Please make these changes:\n" : "按这几条改：\n") + labels.map((t, i) => `${i + 1}. ${t}`).join("\n"));
   };
   const refreshGo = () => {
     const n = picked.size;
@@ -756,10 +703,10 @@ function renderGuide(ev) {
   if (ev.highlighted === false) g.append(el("div", "gnote", "右侧没能高亮，请照文字找。"));
   const acts = el("div", "gacts");
   const BTNS = [
-    ["做好了", "做好了", "primary"],
-    ["慢一点", "慢一点，再讲细一点", ""],
-    ["这步帮我做", "这步帮我做", ""],
-    ["剩下的直接做", "剩下的直接做", ""],
+    ["做好了", en() ? "Done, please check this step" : "做好了", "primary"],
+    ["慢一点", en() ? "Slower, explain in more detail" : "慢一点，再讲细一点", ""],
+    ["这步帮我做", en() ? "Do this step for me" : "这步帮我做", ""],
+    ["剩下的直接做", en() ? "Just do it, finish the rest" : "剩下的直接做", ""],
   ];
   for (const [label, msg, cls] of BTNS) {
     const b = el("button", "btn " + cls, label);
@@ -1157,7 +1104,7 @@ $("btnNew").onclick = async () => {
 $("btnTwb").onclick = async () => {
   const p = await api.pickWorkbook();
   if (!p) return;
-  input.value = `按这个工作簿复刻图表：${p}\n先解析出所有工作表的规格列给我看，然后从第一张开始逐张在 Tableau 里做出来，每张单独一个工作表。`;
+  input.value = en() ? `Recreate the charts from this workbook: ${p}\nFirst parse the specs of every sheet and list them for me, then build them one by one in Tableau, each on its own sheet.` : `按这个工作簿复刻图表：${p}\n先解析出所有工作表的规格列给我看，然后从第一张开始逐张在 Tableau 里做出来，每张单独一个工作表。`;
   autosize();
   input.focus();
 };
@@ -1182,30 +1129,33 @@ $("tutorial").onchange = () => {
   } catch {}
 };
 $("btnExport").onclick = async () => {
-  const lines = [`# Tableau 制作步骤`, ``, `导出时间：${new Date().toLocaleString("zh-CN")}`, ``];
+  const E = en();
+  const T = (zh, enS) => (E ? enS : zh);
+  const lines = [`# ${T("Tableau 制作步骤", "Tableau build steps")}`, ``, `${T("导出时间", "Exported")}: ${new Date().toLocaleString(E ? "en-US" : "zh-CN")}`, ``];
   let n = 0;
   for (const node of log.children) {
     if (node.classList.contains("msg") && node.classList.contains("user")) {
-      lines.push(`## 需求：${node.firstChild?.textContent || ""}`, "");
+      lines.push(`## ${T("需求", "Request")}: ${node.firstChild?.textContent || ""}`, "");
       n = 0;
     } else if (node.classList.contains("msg") && node.classList.contains("ai")) lines.push(node.textContent.trim(), "");
-    else if (node.classList.contains("steps")) {
-      for (const st of node.querySelectorAll(".step")) {
-        const verb = st.querySelector(".verb")?.textContent || "";
-        const detail = st.querySelector(".detail")?.textContent || "";
-        const mark = st.classList.contains("err") ? "（失败）" : "";
-        lines.push(`${++n}. ${verb} ${detail}${mark}`);
+    else if (node.classList.contains("rblk")) {
+      for (const st of node.querySelectorAll(".dstep")) {
+        const label = st.querySelector(".dlb")?.textContent || "";
+        const note = st.querySelector(".dnote")?.textContent || "";
+        const mark = st.classList.contains("err") ? T("（失败）", " (failed)") : "";
+        lines.push(`${++n}. ${label}${mark}`);
+        if (note) lines.push(`   - ${note}`);
       }
       lines.push("");
-    } else if (node.classList.contains("ask")) lines.push(`> ${node.querySelector(".q")?.textContent || ""}`, `> ${node.querySelector(".answer")?.textContent || "（未回答）"}`, "");
-    else if (node.classList.contains("error")) lines.push(`> 出错：${node.textContent}`, "");
+    } else if (node.classList.contains("ask")) lines.push(`> ${node.querySelector(".q")?.textContent || ""}`, `> ${node.querySelector(".answer")?.textContent || T("（未回答）", "(no answer)")}`, "");
+    else if (node.classList.contains("error")) lines.push(`> ${T("出错", "Error")}: ${node.textContent}`, "");
   }
   if (lines.length <= 4) {
     add(el("div", "msg note", "还没有可导出的步骤"));
     return;
   }
   const p = await api.exportSteps(lines.join("\n"));
-  if (p) add(el("div", "msg note", "已导出到 " + p));
+  if (p) add(el("div", "msg note", (E ? "Exported to " : "已导出到 ") + p));
 };
 
 // ---------- 主题：跟随系统 / 白天 / 夜间 ----------
@@ -1490,7 +1440,7 @@ if (api.tableauState) {
 
 // ---------- 版本号与旧版本清理 ----------
 if (api.appVersion) api.appVersion().then((v) => ($("verLine").textContent = "TabPilot v" + v));
-const TRASH_WORD = IS_WIN ? "回收站" : "废纸篓";
+const TRASH_WORD = () => (i18n.lang() === "en" ? (IS_WIN ? "Recycle Bin" : "Trash") : IS_WIN ? "回收站" : "废纸篓");
 if (api.onOldCopies) {
   api.onOldCopies((s) => {
     if (!s || !s.copies || !s.copies.length || document.querySelector(".oldcard")) return;
@@ -1509,14 +1459,14 @@ if (api.onOldCopies) {
       card.append(lab);
       items.push({ cb, path: c.path });
     }
-    card.append(el("div", "hint", `将移入${TRASH_WORD}，随时可以恢复；你的设置、密钥与登录状态不受影响。`));
+    card.append(el("div", "hint", en() ? `They go to the ${TRASH_WORD()} and can be restored from there. Your settings, API keys and sign-in are not affected.` : `将移入${TRASH_WORD()}，随时可以恢复；你的设置、密钥与登录状态不受影响。`));
     const nm = el("label", "nomore");
     const nmc = el("input");
     nmc.type = "checkbox";
     nm.append(nmc, document.createTextNode("以后不再提醒"));
     const res = el("div", "res");
     const acts = el("div", "acts");
-    const go = el("button", "btn danger", `移到${TRASH_WORD}`);
+    const go = el("button", "btn danger", en() ? `Move to ${TRASH_WORD()}` : `移到${TRASH_WORD()}`);
     const later = el("button", "btn", "以后再说");
     const finish = () => {
       if (nmc.checked && api.oldCopies) api.oldCopies.ignore();
@@ -1534,7 +1484,7 @@ if (api.onOldCopies) {
       }
       const ok = (r.removed || []).length;
       const bad = (r.failed || []).length;
-      res.textContent = `已移到${TRASH_WORD}：${ok} 项` + (bad ? `；${bad} 项没能处理，可以自己手动删除。` : "。");
+      res.textContent = en() ? `Moved ${ok} to the ${TRASH_WORD()}.` + (bad ? ` ${bad} couldn't be moved; you can delete them yourself.` : "") : `已移到${TRASH_WORD()}：${ok} 项` + (bad ? `；${bad} 项没能处理，可以自己手动删除。` : "。");
       setTimeout(finish, 2200);
     };
     later.onclick = finish;
@@ -1897,15 +1847,40 @@ function obRender() {
   const body = $("obBody");
   body.innerHTML = "";
   document.querySelectorAll("#obDots i").forEach((d, i) => d.classList.toggle("on", i <= ob.step));
-  $("obBack").hidden = ob.step === 0 || ob.step >= 3;
-  $("obSkip").hidden = ob.step >= 3 || !!ob.gate;
+  $("obBack").hidden = (ob.step === 0 && !ob.langStep) || ob.step === -1 || ob.step >= 3;
+  $("obSkip").hidden = ob.step === -1 || ob.step >= 3 || !!ob.gate;
+  $("obNext").hidden = ob.step === -1;
+  $("obDots").style.visibility = ob.step === -1 ? "hidden" : "";
   const next = $("obNext");
   setNext(false);
   $("onboard").classList.toggle("is-done", ob.step === 4);
   $("onboard").querySelector(".ob-card").classList.toggle("done", ob.step === 4);
   $("onboard").querySelector(".ob-card").dataset.ds = lsGet("doneStyle", "a");
   next.textContent = ob.step === 4 ? "开始使用" : ob.step === 3 && ob.gate ? "进入 TabPilot" : "下一步";
-  if (ob.step === 0) {
+  if (ob.step === -1) {
+    // 第一步：先选语言，选好后整个引导和软件都用这个语言
+    const h = el("h1", "", "Choose your language · 选择语言");
+    h.dataset.notr = "1";
+    const sub = el("p", "", "You can change it later in Settings. · 之后可在设置里更改。");
+    sub.dataset.notr = "1";
+    const row = el("div", "langpick");
+    for (const [l, name, hint] of [["zh", "简体中文", "界面和助手都用中文"], ["en", "English", "Interface and assistant in English"]]) {
+      const b = el("button", "lpbtn");
+      b.type = "button";
+      b.dataset.notr = "1";
+      b.append(el("b", "", name), el("span", "", hint));
+      b.onclick = () => {
+        i18n.set(l);
+        paintLang();
+        if (api.updateSettings) api.updateSettings({ language: l, uiLang: l });
+        ob.step = 0;
+        obRender();
+      };
+      row.append(b);
+    }
+    body.append(h, sub, row);
+    setTimeout(() => row.firstChild && row.firstChild.focus(), 30);
+  } else if (ob.step === 0) {
     body.append(el("h1", "", "选择你的助手"), el("p", "", "它将在右侧的 Tableau 中代你操作，之后可随时在设置中更换。"));
     renderProviderGrid(body);
   } else if (ob.step === 1) {
@@ -2071,6 +2046,8 @@ async function openOnboard(opts) {
   recToken++;
   Object.assign(ob, { step: 0, key: "", models: [], model: "", tested: false, rec: "idle", picked: false });
   api.getSettings().then((s) => {
+    ob.langStep = !opts && s.language === "system";
+    if (ob.langStep) ob.step = -1;
     ob.provider = s.provider || "claude";
     ob.before = { provider: s.provider, model: modelOf(s) };
     if (opts && opts.step === 1) ob.step = 1;
@@ -2097,7 +2074,7 @@ $("obSkip").onclick = async () => {
   if (!ready) openOnboard({ gate: true });
 };
 $("obBack").onclick = () => {
-  ob.step = Math.max(0, ob.step - 1);
+  ob.step = Math.max(ob.langStep ? -1 : 0, ob.step - 1);
   obRender();
 };
 $("obNext").onclick = async () => {
@@ -2885,6 +2862,8 @@ if (api.projects) {
 if (api.setTopInset) api.setTopInset(52);
 
 refreshSettings().then(async (s) => {
+  // 以主进程保存的语言为准（本地缓存可能被清掉或是旧的）
+  if (s.language && s.language !== i18n.pref()) i18n.set(s.language);
   applyWidth(s.splitLeft);
   const configured = api.providers && api.providers.isConfigured ? await api.providers.isConfigured() : !!s.hasKey[s.provider];
   if (!configured) openOnboard();

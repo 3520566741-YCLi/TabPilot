@@ -10,6 +10,25 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-06
+
+### 新增 / Added
+
+- 中英文全局切换：第一次打开先选“简体中文”或 “English”，设置里随时切换，立即全局生效。
+  Language switch: choose 简体中文 or English the first time you open the app, and switch any time in Settings; it takes effect everywhere right away.
+
+### 改进 / Changed
+
+- 英文模式下全部英文：界面、助手回复、教学提示、发布确认、权限说明、报错、菜单和服务商名称；右侧 Tableau 网页的语言也跟着切换。
+  English mode is English throughout: interface, assistant replies, teaching hints, publish confirmation, permission texts, errors, menus and provider names; the Tableau page on the right follows the chosen language too.
+- 语音识别按所选语言识别；macOS 麦克风和语音识别权限说明提供中英文。
+  Voice input recognizes the chosen language; the macOS microphone and speech-recognition prompts come in English and Chinese.
+
+### 修复 / Fixed
+
+- 换过语言后重新打开，界面有时退回中文。
+  After switching language, reopening the app sometimes fell back to Chinese.
+
 ## [0.2.0] - 2026-11-05
 
 ### 新增 / Added
@@ -76,6 +95,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Mac（Apple 芯片、英特尔）和 Windows（x64、Arm64）安装包。
   Installers for Mac (Apple silicon, Intel) and Windows (x64, Arm64).
 
-[Unreleased]: https://github.com/3520566741-YCLi/TabPilot/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/3520566741-YCLi/TabPilot/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/3520566741-YCLi/TabPilot/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/3520566741-YCLi/TabPilot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/3520566741-YCLi/TabPilot/releases/tag/v0.1.0

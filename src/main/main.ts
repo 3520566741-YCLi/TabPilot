@@ -122,6 +122,7 @@ function createWindow() {
   });
 
   const tableauSession = session.fromPartition(PARTITION);
+  applyTableauLanguage();
   keepLoginCookies(tableauSession);
   // 右侧网页不需要摄像头、麦克风、定位、通知等任何权限，一律拒绝（剪贴板写入除外，Tableau 的“拷贝”要用）
   tableauSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === "clipboard-sanitized-write"));
@@ -425,6 +426,7 @@ function registerIpc() {
     if (patch && ("language" in patch || "uiLang" in patch)) {
       setLang(patch.language, patch.uiLang);
       setupMenus();
+      applyTableauLanguage();
     }
     return getSettings();
   });
@@ -781,7 +783,7 @@ function registerIpc() {
     if (nextCache.has(key)) return nextCache.get(key);
     const out = (await askJSON(
       (hint?.lang === "en" ? "Write title, lead and suggestions in English. " : "") +
-        `你是 TabPilot 的助手。用户打开了软件，左侧聊天还是空的。根据右侧 Tableau Public 页面的情况，给用户推荐接下来可以直接让 AI 做的事。\n要求：title 不超过 30 字；lead 不超过 80 字，说明现在处在哪一步；suggestions 2~4 条，每条不超过 40 字，必须是用户可以直接点击发送给 AI 的中文需求（例如“新建 Web 制作工作簿并上传我桌面上的销售数据 Excel”“做一张按地区的销售条形图”），不要写需要用户自己去做的事，不要涉及发布或代填密码。${dataNote}\n\n${ctx}`,
+        `你是 TabPilot 的助手。用户打开了软件，左侧聊天还是空的。根据右侧 Tableau Public 页面的情况，给用户推荐接下来可以直接让 TabPilot 做的事。\n要求：title 不超过 30 字；lead 不超过 80 字，说明现在处在哪一步；suggestions 2~4 条，每条不超过 40 字，必须是用户可以直接点击发送的需求（用界面语言写）（例如“新建 Web 制作工作簿并上传我桌面上的销售数据 Excel”“做一张按地区的销售条形图”），不要写需要用户自己去做的事，不要涉及发布或代填密码。${dataNote}\n\n${ctx}`,
       {
         type: "object",
         properties: { show: { type: "boolean" }, title: { type: "string" }, lead: { type: "string" }, suggestions: { type: "array", items: { type: "string" } } },
@@ -906,6 +908,12 @@ function startDebugServer() {
       });
     })
     .listen(port, "127.0.0.1");
+}
+
+// 右侧 Tableau 网页的语言跟随界面语言：通过 Accept-Language 告诉网站用中文还是英文
+function applyTableauLanguage() {
+  const ses = session.fromPartition(PARTITION);
+  ses.setUserAgent(ses.getUserAgent(), lang() === "en" ? "en-US,en" : "zh-CN,zh");
 }
 
 // 应用菜单：没有“编辑”菜单时 ⌘C / ⌘V / ⌘X / ⌘A 在输入框里不起作用

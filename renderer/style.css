@@ -953,3 +953,10 @@ body.in-home.no-tabs .home { inset: 0; }
 .dlg .db { font-size: 13px; line-height: 1.55; color: var(--ink-2); }
 .dlg .db ul { margin: 6px 0 0; padding-left: 18px; }
 .dlg .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; justify-content: flex-end; }
+
+.langpick { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+.lpbtn { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; text-align: left; padding: 18px; border: 1px solid var(--rule-strong); border-radius: var(--radius-l); background: color-mix(in srgb, var(--paper) 70%, transparent); color: var(--ink); font: inherit; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.lpbtn b { font-size: 20px; }
+.lpbtn span { font-size: 12.5px; color: var(--ink-3); }
+.lpbtn:hover, .lpbtn:focus-visible { border-color: var(--focus); box-shadow: 0 0 0 3px var(--glow); outline: none; }
+@media (max-width: 560px) { .langpick { grid-template-columns: 1fr; } }

@@ -2,6 +2,7 @@
 import { app, safeStorage } from "electron";
 import fs from "fs";
 import path from "path";
+import { L } from "./i18n";
 
 export type ProviderId = "claude" | "openai" | "gemini" | "qwen" | "zhipu" | "moonshot" | "doubao" | "xai" | "mistral" | "deepseek";
 export const PROVIDER_IDS: ProviderId[] = ["claude", "openai", "gemini", "qwen", "zhipu", "moonshot", "doubao", "xai", "mistral", "deepseek"];
@@ -166,7 +167,7 @@ export function setApiKey(provider: KeyId, key: string) {
   const s = load();
   if (!key) delete s.keys[provider];
   else if (safeStorage.isEncryptionAvailable()) s.keys[provider] = "enc:" + safeStorage.encryptString(key).toString("base64");
-  else throw new Error("系统加密不可用，无法安全保存 API Key");
+  else throw new Error(L("系统加密不可用，无法安全保存 API Key", "System encryption is not available, so the API key cannot be stored safely."));
   save(s);
 }
 

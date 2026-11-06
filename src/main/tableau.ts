@@ -8,6 +8,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type Shelf = "columns" | "rows" | "filters" | "pages" | "color" | "size" | "label" | "detail" | "tooltip" | "shape" | "path" | "angle";
 
+const SHELF_EN: Record<Shelf, string> = {
+  columns: "Columns", rows: "Rows", filters: "Filters", pages: "Pages", color: "Color", size: "Size",
+  label: "Label", detail: "Detail", tooltip: "Tooltip", shape: "Shape", path: "Path", angle: "Angle",
+};
+// 教学标注里的功能区名称（跟随界面语言）
+const shelfName = (sh: Shelf) => L(SHELF_CN[sh], SHELF_EN[sh]);
 const SHELF_CN: Record<Shelf, string> = {
   columns: "列", rows: "行", filters: "筛选器", pages: "页面", color: "颜色", size: "大小",
   label: "标签", detail: "详细信息", tooltip: "工具提示", shape: "形状", path: "路径", angle: "角度",
@@ -158,7 +164,7 @@ export class TableauOps {
       const again = await this.find((e) => e.role.startsWith("li") && /^(Web 制作|Web Authoring)/.test(e.name));
       if (!again) continue;
       const pt = { x: Math.min(again.x, again.x - again.w / 2 + 60), y: again.y };
-      await this.hl([pt], "创建 → Web 制作");
+      await this.hl([pt], L("创建 → Web 制作", "Create → Web Authoring"));
       await this.b.click(pt.x, pt.y);
       for (let i = 0; i < 20 && !opened; i++) {
         await sleep(500);
@@ -205,7 +211,7 @@ export class TableauOps {
       if (tab) await this.waitFor((e) => /^(连接到 |Connect to )/.test(e.name) && e.role.startsWith("button"), 20000);
       for (let i = 0; tab && !btn && i < 5; i++) {
         await sleep(i === 0 ? 500 : 1500);
-        await this.hl([{ x: tab.x, y: tab.y }], "切到“文件”页");
+        await this.hl([{ x: tab.x, y: tab.y }], L("切到“文件”页", "Open the Files tab"));
         await this.b.click(tab.x, tab.y);
         btn = await this.waitFor((e) => /^(从计算机上载|Upload from Computer)$/i.test(e.name), 3000);
       }
@@ -213,7 +219,7 @@ export class TableauOps {
     if (!btn) return "没有找到“从计算机上载”按钮。请先 open_web_authoring，或点工具栏“新建数据源”打开“连接到数据”对话框。";
 
     await this.b.armFileChooser();
-    await this.hl([{ x: btn.x, y: btn.y }], "从计算机上载");
+    await this.hl([{ x: btn.x, y: btn.y }], L("从计算机上载", "Upload from Computer"));
     await this.b.click(btn.x, btn.y);
     let done = false;
     if (await this.b.waitFileChooser(5000)) {
@@ -273,7 +279,7 @@ export class TableauOps {
         await sleep(i === 0 ? 2000 : 1500);
         const from = { x: Math.max(40, picked.x - 70), y: picked.y };
         const drop = { x: target.x, y: target.y - 80 };
-        await this.hl([from, drop], `把 ${picked.name} 拖到画布`);
+        await this.hl([from, drop], L(`把 ${picked.name} 拖到画布`, `Drag ${picked.name} onto the canvas`));
         await this.b.drag(from.x, from.y, drop.x, drop.y);
         await sleep(2500);
         const now = await this.b.readElements();
@@ -296,7 +302,7 @@ export class TableauOps {
         if (this.stopped()) throw new Error("已被用户停止");
         const cur = await this.state().catch(() => null);
         if (cur?.page === "datasource" && clicks < 5) {
-          await this.hl([sheetTab], `切到 ${sheet!.name}`);
+          await this.hl([sheetTab], L(`切到 ${sheet!.name}`, `Go to ${sheet!.name}`));
           await this.b.click(sheetTab.x, sheetTab.y);
           clicks++;
         }
@@ -420,7 +426,7 @@ export class TableauOps {
     let ok = false;
     for (let i = 0; i < 3 && !ok; i++) {
       if (i > 0) await sleep(1500);
-      await this.hl([spot], `双击${key ? SHELF_CN[shelf] : "标记卡"}空白处，输入 ${expression}`);
+      await this.hl([spot], L(`双击${key ? SHELF_CN[shelf] : "标记卡"}空白处，输入 ${expression}`, `Double-click the empty ${key ? shelfName(shelf) : "Marks card"} area and type ${expression}`));
       await this.b.click(spot.x, spot.y, { clickCount: 2 });
       for (let j = 0; j < 4 && !ok; j++) {
         await sleep(250);
@@ -468,7 +474,7 @@ export class TableauOps {
   private async setPillEncoding(pill: Pill, shelf: Shelf): Promise<string | null> {
     const iconX = pill.rect.x - 14;
     const iconY = pill.rect.y + pill.rect.h / 2;
-    await this.hl([{ x: iconX, y: iconY }], `点左边图标，改成${SHELF_CN[shelf]}`);
+    await this.hl([{ x: iconX, y: iconY }], L(`点左边图标，改成${SHELF_CN[shelf]}`, `Click the icon on the left and choose ${shelfName(shelf)}`));
     await this.b.click(iconX, iconY);
     await sleep(600);
     const re = ENCODING_NAMES[shelf]!;
@@ -515,7 +521,7 @@ export class TableauOps {
       if (!btn) return `ERR:当前标记类型下没有“${SHELF_CN[shelf]}”按钮（现有：${s.encodingButtons.map((b) => b.name).join("、")}）。`;
       to = center(btn.rect);
     }
-    await this.hl([from, to], `按住 ${f.name}，拖到${SHELF_CN[shelf]}`);
+    await this.hl([from, to], L(`按住 ${f.name}，拖到${SHELF_CN[shelf]}`, `Drag ${f.name} to ${shelfName(shelf)}`));
     await this.b.drag(from.x, from.y, to.x, to.y, 22);
     let msg = `已把字段 ${f.name} 拖到${SHELF_CN[shelf]}`;
     if (agg) {
@@ -548,14 +554,14 @@ export class TableauOps {
     const menuPt = pill.menu && pill.menu.w > 0 ? center(pill.menu) : { x: pill.rect.x + pill.rect.w - 8, y: pill.rect.y + pill.rect.h / 2 };
     const expr = `${agg}([${field}])`;
     for (let attempt = 0; attempt < 2; attempt++) {
-      await this.hl([menuPt], "点胶囊右侧的小三角打开菜单");
+      await this.hl([menuPt], L("点胶囊右侧的小三角打开菜单", "Click the small arrow on the pill to open its menu"));
       await this.b.click(menuPt.x, menuPt.y);
       const edit = await this.waitFor((e) => /menuitem/.test(e.role) && /^(在功能区中编辑|Edit in Shelf)$/.test(e.name), 2500);
       if (!edit) {
         await this.b.key("Escape");
         continue;
       }
-      await this.hl([{ x: edit.x, y: edit.y }], "选“在功能区中编辑”");
+      await this.hl([{ x: edit.x, y: edit.y }], L("选“在功能区中编辑”", "Choose Edit in Shelf"));
       await this.b.click(edit.x, edit.y);
       let editing = false;
       for (let i = 0; i < 8 && !editing; i++) {
@@ -591,7 +597,7 @@ export class TableauOps {
       if (!target) break;
       const from = center(target.rect);
       const to = { x: 100, y: 480 }; // 拖回数据窗格即移除
-      await this.hl([from, to], `把 ${target.label} 拖出功能区即可移除`);
+      await this.hl([from, to], L(`把 ${target.label} 拖出功能区即可移除`, `Drag ${target.label} off the shelf to remove it`));
       await this.b.drag(from.x, from.y, to.x, to.y, 14);
       await sleep(900);
       removed.push(target.label);
@@ -610,7 +616,7 @@ export class TableauOps {
     const c = center(s.markTypeRect);
     let opt: UiElement | undefined;
     for (let i = 0; i < 3 && !opt; i++) {
-      await this.hl([c], `点标记卡的下拉框，选“${target}”`);
+      await this.hl([c], L(`点标记卡的下拉框，选“${target}”`, `Open the Marks card dropdown and choose ${target}`));
       await this.b.click(c.x, c.y);
       opt = await this.waitFor((e) => e.role.startsWith("option") && e.name === target, 2500);
     }
@@ -631,7 +637,7 @@ export class TableauOps {
     const s0 = await this.state();
     const btn = await this.find((e) => e.role.startsWith("button") && /^(新建工作表|New Worksheet)/.test(e.name) && e.y > 600);
     if (!btn) return "找不到底部的“新建工作表”按钮。";
-    await this.hl([{ x: btn.x, y: btn.y }], "底部“新建工作表”");
+    await this.hl([{ x: btn.x, y: btn.y }], L("底部“新建工作表”", "New Worksheet at the bottom"));
     await this.b.click(btn.x, btn.y);
     await sleep(1500);
     const s = await this.state();
@@ -648,7 +654,7 @@ export class TableauOps {
     const c = center(tab.rect);
     let ok = false;
     for (let i = 0; i < 3 && !ok; i++) {
-      await this.hl([c], "双击底部标签可以重命名");
+      await this.hl([c], L("双击底部标签可以重命名", "Double-click the tab at the bottom to rename it"));
       await this.b.click(c.x, c.y, { clickCount: 2 });
       await sleep(700);
       const editing = (await this.b.wc.mainFrame.executeJavaScript(`(() => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable); })()`)) as boolean;
@@ -671,7 +677,7 @@ export class TableauOps {
     const tab = s.sheets.find((t) => t.name === name) ?? s.sheets.find((t) => t.name.toLowerCase() === name.toLowerCase());
     if (!tab) return `找不到工作表「${name}」。现有：${s.sheets.map((t) => t.name).join("、")}`;
     const c = center(tab.rect);
-    await this.hl([c], `切到 ${tab.name}`);
+    await this.hl([c], L(`切到 ${tab.name}`, `Go to ${tab.name}`));
     await this.b.click(c.x, c.y);
     await sleep(1200);
     return `已切到「${tab.name}」。`;
@@ -808,12 +814,12 @@ export class TableauOps {
     for (let i = 0; i < 3 && !item; i++) {
       const btn = await this.waitFor((e) => e.role.startsWith("button") && /^(下载|Download)$/.test(e.name) && e.y < 120, 5000);
       if (!btn) return "工具栏上没有找到“下载”按钮（需要在工作表编辑界面）。";
-      await this.hl([{ x: btn.x, y: btn.y }], "工具栏“下载”");
+      await this.hl([{ x: btn.x, y: btn.y }], L("工具栏“下载”", "Download on the toolbar"));
       await this.b.click(btn.x, btn.y);
       item = await this.waitFor((e) => /menuitem/.test(e.role) && itemRe.test(e.name), 2500);
     }
     if (!item) return "打开“下载”菜单后没找到对应选项。";
-    await this.hl([{ x: item.x, y: item.y }], `选“${item.name}”`);
+    await this.hl([{ x: item.x, y: item.y }], L(`选“${item.name}”`, `Choose ${item.name}`));
     await this.b.click(item.x, item.y);
     // 部分格式会弹对话框，里面有“下载”按钮
     for (let i = 0; i < 12; i++) {
@@ -823,7 +829,7 @@ export class TableauOps {
       const list = await this.b.readElements();
       const inDialog = list.find((e) => e.role.startsWith("button") && /^(下载|Download|导出|Export)$/.test(e.name) && e.y > 120);
       if (inDialog) {
-        await this.hl([{ x: inDialog.x, y: inDialog.y }], "对话框里点“下载”");
+        await this.hl([{ x: inDialog.x, y: inDialog.y }], L("对话框里点“下载”", "Click Download in the dialog"));
         await this.b.click(inDialog.x, inDialog.y);
         break;
       }

@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "TabPilot uses the microphone for voice input.";
+"NSSpeechRecognitionUsageDescription" = "TabPilot turns your speech into text on this Mac.";

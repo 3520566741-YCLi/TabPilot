@@ -40,13 +40,13 @@
     "说说你想看的图 · 回车发送，Shift+回车换行": "Tell me the chart you have in mind. Enter to send, Shift+Enter for a new line.",
     "添加图片或数据文件（也可以直接拖进来、粘贴截图）": "Add images or data files (you can also drag them in or paste a screenshot)",
     "截取右侧 Tableau 画面发给 TabPilot": "Capture the Tableau view and send it to TabPilot",
-    "截取 Tableau 画面": "Capture the Tableau view",
-    "添加附件": "Add attachment",
-    "语音输入": "Voice input",
+    
+    
+    
     "教我做": "Teach me",
     "开启后，TabPilot 会一边操作一边讲解，并在右侧标出位置": "When on, TabPilot explains as it works and points to the spot on the right.",
     "发送": "Send", "停止": "Stop",
-    "不再提示": "Don't show again",
+    
     "下一条": "Next tip", "知道了": "Got it",
     "像对同事说话那样描述就好，例如：“按地区看销售额，用柱状图”。": "Describe it the way you'd tell a colleague, for example: “sales by region as a bar chart.”",
     "数据文件可以直接拖入，截图可以直接粘贴，也可以点麦克风开口说。": "Drag in a data file, paste a screenshot, or tap the microphone and speak.",
@@ -92,19 +92,19 @@
     "改了什么：": "What changed: ",
     "撤销": "Undo", "撤销中…": "Undoing…", "已撤销": "Undone", "不能撤销": "Can't undo", "撤销失败": "Undo failed",
     "可以这样改进": "A few ways to improve it",
-    "按所选去做": "Do the selected",
+    
     "先勾选至少一项": "Select at least one first",
     "全选": "Select all", "忽略": "Dismiss",
     "还没有勾选任何项。": "Nothing is selected yet.",
     "已完成：": "Done: ",
-    "已完成": "Completed", "保存（有没保存的改动）": "Save (unsaved changes)", "有没保存的改动": "Unsaved changes", "未保存": "Unsaved", "文档存放位置": "Document location", "每个项目在这里有自己的文件夹：数据文件的副本、导出的图片和工作簿、制作步骤。": "Each project has its own folder here: copies of your data files, exported images and workbooks, and the steps.", "更改": "Change", "在访达中显示": "Show in Finder", "在资源管理器中显示": "Show in File Explorer", "换个位置": "Choose another place", "正在执行任务，等它结束再保存": "A task is running; save after it finishes", "保存到 Tableau Public": "Save to Tableau Public", "保存会把这个工作簿发布到你的 Tableau Public 账号，并设成不在个人主页显示。有链接的人仍然能看到，所以别用私密数据。下次打开这个项目，会直接打开它接着编辑。": "Saving publishes this workbook to your Tableau Public account, hidden from your profile. Anyone with the link can still see it, so keep private data out. Next time you open this project, it picks up right where you left off.", "我明白，保存": "I understand, save", "要不要再下载一份 .twbx 放到项目文件夹？本地文件只能用 Tableau Desktop 编辑，在 TabPilot 里继续编辑的是网上那份。": "Also download a .twbx into the project folder? A local file can only be edited in Tableau Desktop; in TabPilot you keep editing the online copy.", "下载": "Download", "不用": "No thanks", "这些项目还有没保存的改动：": "These projects have unsaved changes:", "先保存再退出吗？": "Save before quitting?", "去保存": "Go save", "不保存，直接退出": "Quit without saving", "这个项目还有没保存的改动": "This project has unsaved changes", "不保存，关闭": "Close without saving", "这份已保存的工作簿打不开了": "This saved workbook won't open", "去我的作品里找回": "Find it in My Work", "正在去我的作品里找…": "Looking in My Work…",  "草稿": "Draft", "这个草稿在 Tableau 那边已经失效": "This draft has expired on Tableau's side", "没保存到 Tableau Public 的草稿，过一阵会被清掉。登录没问题，聊天记录也都在。": "Drafts not saved to Tableau Public get cleared after a while. Your sign-in is fine and the chat history is intact.", "按记录重新做一遍": "Rebuild from the record", "新建空白工作簿": "Start a blank workbook", "正在按记录重新做一遍…": "Rebuilding from the record…", "正在新建空白工作簿…": "Creating a blank workbook…", "做好了": "Done", "慢一点": "Slower", "这步帮我做": "Do this step for me", "剩下的直接做": "Just do the rest", "慢一点，再讲细一点": "Slower, with more detail", "右侧没能高亮，请照文字找。": "Couldn't highlight it on the right; follow the text to find it.", "想做哪一个？可以多选": "What would you like to make? Pick one or more", "确定": "Confirm", "运行中": "Running", "正在执行任务": "Working on a task", "排队中": "Queued", "作为引导发送": "Send as guidance", "移出队列": "Remove from queue", "引导": "Guidance", "运行中发送的消息直接作为引导": "Send messages as guidance while running", "关闭时，运行中发的消息会排队，等这一轮做完再发；排队的消息旁边可以随时点“作为引导发送”。": "When off, messages sent while running are queued and sent after this run; you can tap “Send as guidance” on a queued message at any time.", "运行中发送的消息不带附件，附件会留在输入框里": "Messages sent while running can't carry attachments; they stay in the box", "这一轮刚好结束了，已作为新消息发送": "The run just finished, so it was sent as a new message", "项目主页": "Projects", "查看细节": "Show details", "思考记录": "Reasoning", "操作页面": "Working on the page", "正在想下一步…": "Thinking about the next step…",
+    "已完成": "Completed", "已取消": "Cancelled", "移除": "Remove", "按工作簿复刻": "Recreate from a workbook", "导出制作步骤": "Export steps", "截图": "Screenshot", "按所选去做": "Apply selected", "关闭": "Close", "后退": "Back", "刷新": "Reload", "添加附件": "Add attachment", "截取 Tableau 画面": "Capture the Tableau view", "语音输入": "Voice input", "不再提示": "Don't show again", "排序": "Sort", "列表": "List", "卡片": "Cards", "拖动调整侧栏宽度": "Drag to resize the sidebar", "首次设置": "First-time setup", "Tableau 登录指引": "Tableau sign-in guide", "项目": "Projects",  "保存（有没保存的改动）": "Save (unsaved changes)", "有没保存的改动": "Unsaved changes", "未保存": "Unsaved", "文档存放位置": "Document location", "每个项目在这里有自己的文件夹：数据文件的副本、导出的图片和工作簿、制作步骤。": "Each project has its own folder here: copies of your data files, exported images and workbooks, and the steps.", "更改": "Change", "在访达中显示": "Show in Finder", "在资源管理器中显示": "Show in File Explorer", "换个位置": "Choose another place", "正在执行任务，等它结束再保存": "A task is running; save after it finishes", "保存到 Tableau Public": "Save to Tableau Public", "保存会把这个工作簿发布到你的 Tableau Public 账号，并设成不在个人主页显示。有链接的人仍然能看到，所以别用私密数据。下次打开这个项目，会直接打开它接着编辑。": "Saving publishes this workbook to your Tableau Public account, hidden from your profile. Anyone with the link can still see it, so keep private data out. Next time you open this project, it picks up right where you left off.", "我明白，保存": "I understand, save", "要不要再下载一份 .twbx 放到项目文件夹？本地文件只能用 Tableau Desktop 编辑，在 TabPilot 里继续编辑的是网上那份。": "Also download a .twbx into the project folder? A local file can only be edited in Tableau Desktop; in TabPilot you keep editing the online copy.", "下载": "Download", "不用": "No thanks", "这些项目还有没保存的改动：": "These projects have unsaved changes:", "先保存再退出吗？": "Save before quitting?", "去保存": "Go save", "不保存，直接退出": "Quit without saving", "这个项目还有没保存的改动": "This project has unsaved changes", "不保存，关闭": "Close without saving", "这份已保存的工作簿打不开了": "This saved workbook won't open", "去我的作品里找回": "Find it in My Work", "正在去我的作品里找…": "Looking in My Work…",  "草稿": "Draft", "这个草稿在 Tableau 那边已经失效": "This draft has expired on Tableau's side", "没保存到 Tableau Public 的草稿，过一阵会被清掉。登录没问题，聊天记录也都在。": "Drafts not saved to Tableau Public get cleared after a while. Your sign-in is fine and the chat history is intact.", "按记录重新做一遍": "Rebuild from the record", "新建空白工作簿": "Start a blank workbook", "正在按记录重新做一遍…": "Rebuilding from the record…", "正在新建空白工作簿…": "Creating a blank workbook…", "做好了": "Done", "慢一点": "Slower", "这步帮我做": "Do this step for me", "剩下的直接做": "Just do the rest", "慢一点，再讲细一点": "Slower, with more detail", "右侧没能高亮，请照文字找。": "Couldn't highlight it on the right; follow the text to find it.", "想做哪一个？可以多选": "What would you like to make? Pick one or more", "确定": "Confirm", "运行中": "Running", "正在执行任务": "Working on a task", "排队中": "Queued", "作为引导发送": "Send as guidance", "移出队列": "Remove from queue", "引导": "Guidance", "运行中发送的消息直接作为引导": "Send messages as guidance while running", "关闭时，运行中发的消息会排队，等这一轮做完再发；排队的消息旁边可以随时点“作为引导发送”。": "When off, messages sent while running are queued and sent after this run; you can tap “Send as guidance” on a queued message at any time.", "运行中发送的消息不带附件，附件会留在输入框里": "Messages sent while running can't carry attachments; they stay in the box", "这一轮刚好结束了，已作为新消息发送": "The run just finished, so it was sent as a new message", "项目主页": "Projects", "查看细节": "Show details", "思考记录": "Reasoning", "操作页面": "Working on the page", "正在想下一步…": "Thinking about the next step…",
     "按这几条改：\n": "Please make these changes:\n",
     "我选这几个来做：\n": "I'll go with these:\n",
     "（失败）": " (failed)",
     "（未回答）": "(unanswered)",
     "问题": "question", "确认": "Confirm",
     // ---- 项目与登录 ----
-    "Tableau 登录指引": "Tableau sign-in guide",
+    
     "第 1 步": "Step 1", "第 2 步": "Step 2", "第 3 步": "Step 3", "第 4 步": "Step 4", "已登录": "Signed in",
     "先处理页面上的 Cookie 提示": "First, deal with the cookie notice",
     "在右边页面里找到 Cookie 提示（通常在页面底部或中间）。": "Find the cookie notice on the right-hand page (usually at the bottom or in the middle).",
@@ -172,7 +172,7 @@
     "清除已保存的 Key": "Remove saved keys", "保存": "Save", "已保存": "Saved", "未设置": "Not set",
     "“主动给出改进建议”：做完图后 TabPilot 会告诉你还能怎么改。“快速模型复核”是进阶选项，不确定就保持关闭。": "“Suggest improvements”: after a chart is finished, TabPilot tells you how it could be better. “Double-check” is an advanced option; if you're unsure, leave it off.",
     // ---- 首次设置 ----
-    "首次设置": "First-time setup", "稍后再说": "Not now", "上一步": "Back", "下一步": "Next", "开始使用": "Get started",
+    "稍后再说": "Not now", "上一步": "Back", "下一步": "Next", "开始使用": "Get started",
     "选择你的助手": "Choose your assistant",
     "它将在右侧的 Tableau 中代你操作，之后可随时在设置中更换。": "It will work in the Tableau on the right on your behalf. You can change it any time in Settings.",
     "密钥仅保存在本机，并经系统钥匙串加密。填好后，先测试连接。": "Your key stays on this computer, encrypted in the system keychain. Once it's in, test the connection.",
@@ -201,7 +201,7 @@
     "先点“测试连接”，成功后才能继续": "Test the connection first. You can continue once it succeeds.",
     "正在保存…": "Saving…", "保存失败：": "Couldn't save: ",
     "支持图片": "Handles images", "不能看图": "No image support",
-    "不支持（靠读取页面结构）": "No (reads the page structure instead)", "看图": "Images", "支持": "Yes", "下一步": "Next",
+    "不支持（靠读取页面结构）": "No (reads the page structure instead)", "看图": "Images", "支持": "Yes", 
     "填入 API Key": "Enter your API key", "地区": "Region", "国内可直连": "Direct access in China", "国际": "International",
     "能看懂截图，操作最稳，适合复杂的图。": "Reads screenshots and is the steadiest, ideal for complex charts.",
     "便宜、中文好；看不到截图，靠读取页面结构完成每一步。": "Affordable and strong in Chinese. It can't see screenshots, so it reads the page structure.",
@@ -222,10 +222,10 @@
     "点一下更换助手或模型": "Click to change assistant or model",
     "Cookie": "Cookie", "登录": "Sign in", "注册": "Sign up", "验证": "Verify",
     // ---- 项目主页 ----
-    "项目主页": "Projects", "最近项目": "Recent", "全部项目": "All projects", "收藏": "Favorites", "归档": "Archive", "归档于 ": "Archived ",
+    "最近项目": "Recent", "全部项目": "All projects", "收藏": "Favorites", "归档": "Archive", "归档于 ": "Archived ",
     "已自动保存到本机": "Saved automatically on this computer", "搜索项目": "Search projects",
-    "最近编辑": "Last edited", "名称": "Name", "创建时间": "Created", "列表": "List", "卡片": "Cards", "新建项目": "New project",
-    "拖动调整侧栏宽度": "Drag to resize the sidebar",
+    "最近编辑": "Last edited", "名称": "Name", "创建时间": "Created", 
+    
     "项目实时保存在本机。关掉再打开，聊天和工作簿都会回来。": "Projects save as you work. Close and reopen, and both the chat and the workbook come back.",
     "没有找到匹配的项目。": "No matching projects.",
     "还没有收藏。点项目右边的星标，就能把重要的图固定在这里。": "No favorites yet. Tap the star on a project to pin the ones that matter.",
@@ -244,14 +244,14 @@
     "请先允许所有必需的权限": "Allow all required permissions first",
     "可选": "Optional", "已同意": "Agreed", "已允许": "Allowed", "去系统设置": "Open system settings", "同意": "Agree", "允许": "Allow",
     "进入 TabPilot": "Enter TabPilot",
-    "已连接": "Connected", "更改设置": "Change settings", "已全部允许": "All allowed", "权限": "Permissions",
+    "已连接": "Connected", "更改设置": "Change settings", "已全部允许": "All allowed", 
     // ---- 其他 ----
     "还没有填写 API Key，": "No API key yet. ", "打开设置": "Open settings",
     "请先在设置里填写 API Key": "Please add your API key in Settings first.",
     "消息为空": "The message is empty.",
-    "项目": "Project", "首页": "Home", "后退": "Back", "刷新": "Reload", "创建": "Create", "登录": "Sign in", "注册": "Sign up",
-    "接受": "Accept", "拒绝": "Reject", "继续": "Continue", "邮箱": "Email", "用户名": "Username", "验证": "Verify", "验证码": "Code",
-    "完成": "Done", "确认": "Confirm", "标签": "Label", "创建账户": "Create account",
+    "首页": "Home", "创建": "Create", 
+    "接受": "Accept", "拒绝": "Reject", "继续": "Continue", "邮箱": "Email", "用户名": "Username", "验证码": "Code",
+    "创建账户": "Create account",
     "停止中": "Stopping", "已处理": "Resolved",
   };
   // 带变量的句子：[正则, 英文]（$1 $2 为捕获组）
@@ -261,13 +261,13 @@
     [/^(\d+) 个工作表$/, "$1 sheets"],
     [/^永久删除“(.+)”？本地的聊天记录和步骤都会删除，不能恢复。不会影响 Tableau Public 上已发布的内容。$/, "Delete “$1” permanently? Its local chat and steps will be removed and can't be recovered. Anything published on Tableau Public is not affected."],
     [/^删除于 (.+)$/, "Deleted $1"],
-    [/^已完成 (\d+) 步$/, "$1 steps done"],
+    [/^已完成 (\d+) 步$/, "$1 step$S done"],
     [/^已完成：(.+)$/, "Done: $1"],
-    [/^按所选去做（(\d+)）$/, "Do the selected ($1)"],
-    [/^(\d+) 步已完成$/, "$1 steps done"],
+    [/^按所选去做（(\d+)）$/, "Apply selected ($1)"],
+    [/^(\d+) 步已完成$/, "$1 step$S done"],
     [/^填入 (.+) 的 Key$/, "Enter your $1 key"],
     [/^填写 (.+) 的密钥$/, "Enter your $1 key"],
-    [/^连接成功，找到 (\d+) 个模型$/, "Connected. Found $1 models."],
+    [/^连接成功，找到 (\d+) 个模型$/, "Connected. Found $1 model$S."],
     [/^缓存命中 ([\d,.\s]+)$/, "Cached $1"],
     [/^输入 ([\d,.\s]+) · 输出 ([\d,.\s]+) tokens$/, "Input $1 · Output $2 tokens"],
     [/^你现在用的是 v(.+)。下面这些旧版本可以清理掉，避免点错。勾选要处理的：$/, "You're on v$1. These older copies can be cleaned up so you don't open the wrong one. Select the ones to remove:"],
@@ -296,6 +296,7 @@
   const SKIP = ".msg.ai, .msg.user, .out, details.thinking > div, .ext-link, .pth, .url, input, textarea, [data-notr], .lhist";
 
   function trText(zh) {
+    if (typeof zh !== "string") return null;
     const key = zh.trim();
     if (!key) return null;
     if (Object.prototype.hasOwnProperty.call(EN, key)) return EN[key];
@@ -303,7 +304,7 @@
       const m = key.match(re);
       if (m) {
         // 废纸篓 / 回收站 按平台翻成 Trash / Recycle Bin，避免英文句子里混进中文
-        return key.replace(re, en).replace(/\$\d/g, "").replace(/废纸篓/g, "Trash").replace(/回收站/g, "Recycle Bin").trim();
+        return key.replace(re, en).replace(/\$S/g, m[1] === "1" ? "" : "s").replace(/\$\d/g, "").replace(/废纸篓/g, "Trash").replace(/回收站/g, "Recycle Bin").trim();
       }
     }
     const live = key.match(/^正在(.+?)( .*)?…$/);
@@ -382,7 +383,7 @@
           const s = origAttr.get(m.target);
           if (s && m.attributeName in s && m.target.getAttribute(m.attributeName) !== s[m.attributeName]) {
             const cur = m.target.getAttribute(m.attributeName);
-            if (trText(cur) !== cur) delete s[m.attributeName];
+            if (cur == null || trText(cur) !== cur) delete s[m.attributeName];
           }
           applyAttrs(m.target);
         } else if (m.type === "characterData") {

@@ -13,7 +13,7 @@ export type AgentEvent =
   | { type: "text"; delta: string }
   | { type: "thinking"; delta: string }
   | { type: "tool"; id: string; name: string; input: unknown; label: string } // label：给人看的一句话（按界面语言），界面只显示它
-  | { type: "tool_result"; id: string; text: string; isError?: boolean; image?: string }
+  | { type: "tool_result"; id: string; text: string; userText?: string; isError?: boolean; image?: string }
   | { type: "ask"; id: string; question: string; options: string[]; danger?: boolean }
   | { type: "confirm"; id: string; title: string; steps: { text: string; danger?: boolean }[]; danger?: boolean; okLabel: string; cancelLabel: string }
   | { type: "change"; id: string; text: string; undoable: boolean }
@@ -188,7 +188,9 @@ async function runTool(o: AgentOptions, id: string, name: string, input: unknown
   } catch (e) {
     result = { text: "工具执行出错：" + (e instanceof Error ? e.message : String(e)), isError: true };
   }
-  o.emit({ type: "tool_result", id, text: result.text, isError: result.isError, image: result.image?.data });
+  // userText：给界面显示的结果。工具结果原文是写给模型看的中文，英文界面只显示一句通用说明
+  const userText = L(result.text, result.isError ? "This step didn't work. TabPilot will try another way." : "Done");
+  o.emit({ type: "tool_result", id, text: result.text, userText, isError: result.isError, image: result.image?.data });
   return result;
 }
 
@@ -422,7 +424,7 @@ class OpenAICompatAdapter implements ProviderAdapter {
         } catch {
           this.o.emit({ type: "tool", id: c.id, name: c.function.name, input: c.function.arguments, label: stepLabel(c.function.name, c.function.arguments) });
           const t = "参数不是合法 JSON，请重新调用。";
-          this.o.emit({ type: "tool_result", id: c.id, text: t, isError: true });
+          this.o.emit({ type: "tool_result", id: c.id, text: t, userText: L(t, "This step didn't work. TabPilot will try another way."), isError: true });
           this.messages.push({ role: "tool", tool_call_id: c.id, content: t });
           continue;
         }

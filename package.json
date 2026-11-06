@@ -1,7 +1,7 @@
 {
   "name": "tableau-ai",
   "productName": "TabPilot",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "用中文操作 Tableau Public 网页版的桌面助手",
   "license": "MIT",
   "main": "dist/main/main.js",
@@ -39,14 +39,24 @@
       "category": "public.app-category.productivity",
       "identity": null,
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "语音输入需要使用麦克风。",
-        "NSSpeechRecognitionUsageDescription": "把你的语音转成文字发给 AI。"
+        "NSMicrophoneUsageDescription": "TabPilot uses the microphone for voice input.",
+        "NSSpeechRecognitionUsageDescription": "TabPilot turns your speech into text on this Mac.",
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleLocalizations": ["en", "zh-Hans"]
       },
       "icon": "build/icon.png",
       "extraResources": [
         {
           "from": "native/build/voice-helper",
           "to": "voice-helper"
+        },
+        {
+          "from": "build/lproj/en.lproj",
+          "to": "en.lproj"
+        },
+        {
+          "from": "build/lproj/zh-Hans.lproj",
+          "to": "zh-Hans.lproj"
         }
       ]
     },

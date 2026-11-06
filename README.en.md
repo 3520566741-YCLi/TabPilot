@@ -48,7 +48,7 @@ TabPilot lowers that barrier by demonstrating each step live in your own Tableau
 | 💾 Save & project folders | Save to your own Tableau Public in one click (hidden from your profile) and pick up where you left off; each project gets a local folder with data copies, chart steps and exports |
 | 🎙️ Input | On-device voice input, screenshots and images, data file analysis |
 | ↩️ In control | Every step is shown in the chat and can be undone; steer or stop while it runs; it always asks before publishing publicly |
-| 🌗 Interface | Chinese / English UI, light / dark theme |
+| 🌗 Interface | Full Chinese / English switch (pick a language on first launch, change it any time in Settings), light / dark theme |
 
 
 <p align="center">

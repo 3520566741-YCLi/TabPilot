@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "TabPilot 用麦克风接收语音输入。";
+"NSSpeechRecognitionUsageDescription" = "TabPilot 在本机把你的语音转成文字。";

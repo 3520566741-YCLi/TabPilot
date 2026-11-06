@@ -473,7 +473,7 @@ export class ToolHost {
         const p = await this.resolvePoint(input, "element_id", null);
         const blocked = await this.guardDangerous(p.x, p.y);
         if (blocked) return { text: blocked, isError: true };
-        await b.highlight([p], input.double ? "双击这里" : input.button === "right" ? "右键点这里" : "点击这里", this.tutorial);
+        await b.highlight([p], input.double ? L("双击这里", "Double-click here") : input.button === "right" ? L("右键点这里", "Right-click here") : L("点击这里", "Click here"), this.tutorial);
         if (this.tutorial) await sleep(700);
         await b.click(p.x, p.y, { button: input.button ?? "left", clickCount: input.double ? 2 : 1 });
         await sleep(400);
@@ -482,7 +482,7 @@ export class ToolHost {
       case "drag": {
         const from = await this.resolvePoint(input, "from_element_id", "from");
         const to = await this.resolvePoint(input, "to_element_id", "to");
-        await b.highlight([from, to], "按住拖到这里松开", this.tutorial);
+        await b.highlight([from, to], L("按住拖到这里松开", "Drag here and release"), this.tutorial);
         if (this.tutorial) await sleep(900);
         await b.drag(from.x, from.y, to.x, to.y);
         await sleep(600);
